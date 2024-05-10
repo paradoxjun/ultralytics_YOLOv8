@@ -1,0 +1,15 @@
+path: /home/chenjun/code/ultralytics_YOLOv8/datasets/bank_monitor/data # dataset root dir
+train: train/images # train images (relative to 'path') 1052 images
+val: test/images # val images (relative to 'path') 225 images
+test: test/images # test images (relative to 'path') 227 images
+
+# number of classes
+nc: 5
+
+# Classes
+names:
+  0: ycj
+  1: ycj_yq
+  2: kx
+  3: kx_dk
+  4: money
