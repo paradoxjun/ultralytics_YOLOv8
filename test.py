@@ -1,5 +1,6 @@
 from ultralytics import YOLO
 
+
 data_path = r"/home/chenjun/code/datasets/bank_monitor/data_05_09"
 # Load a model
 model = YOLO(model='./runs/detect/train_05_09_01/weights/best.pt', task="detect")  # pretrained YOLOv8n model

@@ -1,15 +1,23 @@
-path: /home/chenjun/code/ultralytics_YOLOv8/datasets/bank_monitor/data # dataset root dir
-train: train/images # train images (relative to 'path') 1052 images
-val: test/images # val images (relative to 'path') 225 images
+# path: /home/chenjun/code/datasets/bank_monitor/data_without_neg # dataset root dir
+train: /home/chenjun/code/datasets/bank_monitor/data_without_neg/train/images # train images (relative to 'path') 1052 images
+val: /home/chenjun/code/datasets/bank_monitor/data_without_neg/val/images # val images (relative to 'path') 225 images
 test: test/images # test images (relative to 'path') 227 images
 
+negative_setting:
+  neg_ratio: 5    # 小于等于0时，按原始官方配置训练，大于0时，控制正负样本。
+  use_extra_neg: True
+  extra_neg_sources: {"/home/chenjun/code/datasets/COCO/train2014" : 20000,
+                      # "/home/chenjun/code/datasets/bank_monitor/seed_img/image_list.txt": 10
+                      }  # 数据集字符串或列表（图片路径或图片列表）
+  fix_dataset_length: 10000  # 是否自定义每轮参与训练的图片数量
+
+
 # number of classes
-nc: 5
+nc: 4
 
 # Classes
 names:
   0: ycj
-  1: ycj_yq
-  2: kx
-  3: kx_dk
-  4: money
+  1: kx
+  2: kx_dk
+  3: money

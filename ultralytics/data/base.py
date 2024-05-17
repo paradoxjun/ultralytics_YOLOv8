@@ -60,30 +60,30 @@ class BaseDataset(Dataset):
         pad=0.5,
         single_cls=False,
         classes=None,
-        fraction=1.0,
+        fraction=1.0
     ):
         """Initialize BaseDataset with given configuration and options."""
         super().__init__()
-        self.img_path = img_path
-        self.imgsz = imgsz
-        self.augment = augment
-        self.single_cls = single_cls
-        self.prefix = prefix
-        self.fraction = fraction
-        self.im_files = self.get_img_files(self.img_path)
-        self.labels = self.get_labels()
-        self.update_labels(include_class=classes)  # single_cls and include_class
-        self.ni = len(self.labels)  # number of images
-        self.rect = rect
-        self.batch_size = batch_size
-        self.stride = stride
-        self.pad = pad
-        if self.rect:
+        self.img_path = img_path        # 图像文件夹路径
+        self.imgsz = imgsz              # 图像大小
+        self.augment = augment          # 是否进行数据增强
+        self.single_cls = single_cls    # 是否进行单类别训练
+        self.prefix = prefix            # 输出日志信息的前缀
+        self.fraction = fraction        # 数据集的使用比例
+        self.im_files = self.get_img_files(self.img_path)   # 获取图像文件列表
+        self.labels = self.get_labels()                     # 获取标签信息
+        self.update_labels(include_class=classes)           # 更新标签信息，包括指定的类别
+        self.ni = len(self.labels)                          # 数据集中图像的数量
+        self.rect = rect                # 是否使用矩形训练
+        self.batch_size = batch_size    # 批次大小
+        self.stride = stride            # 步长
+        self.pad = pad                  # 填充值
+        if self.rect:                   # 如果使用矩形训练，确保批次大小不为None
             assert self.batch_size is not None
-            self.set_rectangle()
+            self.set_rectangle()        # 设置矩形训练相关参数
 
         # Buffer thread for mosaic images
-        self.buffer = []  # buffer size = batch size
+        self.buffer = []            # buffer size = batch size, 缓冲区大小为批次大小
         self.max_buffer_length = min((self.ni, self.batch_size * 8, 1000)) if self.augment else 0
 
         # Cache images (options are cache = True, False, None, "ram", "disk")
@@ -91,10 +91,10 @@ class BaseDataset(Dataset):
         self.npy_files = [Path(f).with_suffix(".npy") for f in self.im_files]
         self.cache = cache.lower() if isinstance(cache, str) else "ram" if cache is True else None
         if (self.cache == "ram" and self.check_cache_ram()) or self.cache == "disk":
-            self.cache_images()
+            self.cache_images()     # 缓存图像到内存或磁盘
 
         # Transforms
-        self.transforms = self.build_transforms(hyp=hyp)
+        self.transforms = self.build_transforms(hyp=hyp)    # 构建图像变换函数
 
     def get_img_files(self, img_path):
         """Read image files."""
