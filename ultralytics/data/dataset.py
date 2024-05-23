@@ -75,7 +75,7 @@ class YOLODataset(BaseDataset):
     def __getitem__(self, index):
         """Returns transformed label information for given index."""
         # pid = os.getpid()
-        if "train" in self.prefix.lower():
+        if "train" in self.prefix.lower() and self.data["negative_setting"]["neg_ratio"] > 0:
             if self.im_pos_num * self.data["negative_setting"]["neg_ratio"] >= self.im_neg_num:
                 self.im_neg_num += 1
                 index = random.choice(self.im_neg_index)
