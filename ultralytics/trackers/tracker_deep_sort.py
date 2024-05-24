@@ -74,13 +74,13 @@ class VideoTracker:
         cls = torch.cat((det_person.boxes.cls + 4, det_things.boxes.cls)).cpu()         # 标签，多检测器需要调整类别标签
 
         if len(cls) > 0:
-            outputs = self.deepsort.update(bbox_xywh, confs, img, cls)   # x1,y1,x2,y2,label,track_ID,confs
+            deepsort_outputs = self.deepsort.update(bbox_xywh, confs, img, cls)   # x1,y1,x2,y2,label,track_ID,confs
             # print(f"bbox_xywh: {bbox_xywh}, confs: {confs}, cls: {cls}, outputs: {outputs}")
         else:
-            outputs = torch.zeros((0, 6))
+            deepsort_outputs = torch.zeros((0, 6))
 
         t3 = time.time()
-        return outputs, [bbox_xywh, cls, confs], [t2 - t1, t3 - t2]
+        return deepsort_outputs, [bbox_xywh, cls, confs], [t2 - t1, t3 - t2]
 
     def plot_track(self, img, offset=(0, 0)):
         deepsort_output, _, _ = self.image_track(img)
