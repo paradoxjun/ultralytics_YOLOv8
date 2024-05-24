@@ -1,17 +1,16 @@
 input_path: '/home/chenjun/code/datasets/bank_monitor/银行柜台监控_1.mp4'
-save_path: '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/track'
-save_txt: '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/track/save_txt/'
+save_root: '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/track/'
+save_option:
+  save_dir: 'run'
+  save_txt: True
+  save_img: True
 vid_stride: 1
-imgsz: 640
 config_deep_sort: '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/trackers/deep_sort.yaml'
 fourcc: mp4v
 camera: -1
 device: 0
 half: False
-display:
-  turn_on: True
-  width: 800
-  height: 800
+video_shape: [800, 800]
 class_name:
   0: ycj
   1: kx

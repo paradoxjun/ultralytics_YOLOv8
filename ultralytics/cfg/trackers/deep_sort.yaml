@@ -1,10 +1,9 @@
 DEEPSORT:
   REID_CKPT: "/home/chenjun/code/ultralytics_YOLOv8/ultralytics/trackers/deep_sort/deep/checkpoint/ckpt.t7"
-  MAX_DIST: 0.2
-  MIN_CONFIDENCE: 0.3
-  NMS_MAX_OVERLAP: 0.5
-  MAX_IOU_DISTANCE: 0.7
-  MAX_AGE: 70
-  N_INIT: 3
-  NN_BUDGET: 100
-  
+  MAX_DIST: 0.2           # 设置关联矩阵中余弦距离的最大阈值。较小值使关联更严格，较大相似度的检测框才关联。
+  MIN_CONFIDENCE: 0.1     # 只有置信度高于此阈值的检测结果才会被用于跟踪。
+  NMS_MAX_OVERLAP: 1.0    # 重叠比例超过这个阈值的检测框将被抑制。
+  MAX_IOU_DISTANCE: 1.0   # 设置检测框和跟踪目标之间的最大IoU。较大值允许更大重叠区域，使关联更为宽松。
+  MAX_AGE: 70       # 设置跟踪器中一个跟踪目标的最大未更新帧数。超过这个帧数未更新的跟踪目标将被删除。
+  N_INIT: 3         # 设置一个目标在确认前需要被连续检测到的帧数。只有经过这段时间的检测，目标才会被正式跟踪。
+  NN_BUDGET: 100    # 设置用于近邻搜索的最大特征数。如果特征数超过这个值，最旧的特征将被删除。

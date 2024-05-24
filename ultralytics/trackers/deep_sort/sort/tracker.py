@@ -37,11 +37,13 @@ class Tracker:
 
     """
 
-    def __init__(self, metric, max_iou_distance=0.7, max_age=70, n_init=3):
+    def __init__(self, metric, max_iou_distance=0.7, max_age=70, n_init=3, label=None, confs=None):
         self.metric = metric
         self.max_iou_distance = max_iou_distance
         self.max_age = max_age
         self.n_init = n_init
+        self.label = label  # 新增此行
+        self.confs = confs  # 新增此行
 
         self.kf = kalman_filter.KalmanFilter()
         self.tracks = []
@@ -73,8 +75,9 @@ class Tracker:
 
         # Update track set.
         for track_idx, detection_idx in matches:
-            self.tracks[track_idx].update(
-                self.kf, detections[detection_idx])
+            self.tracks[track_idx].update(self.kf, detections[detection_idx])
+            self.tracks[track_idx].label = detections[detection_idx].label      # 新增此行
+            self.tracks[track_idx].confs = detections[detection_idx].confs      # 新增此行
         for track_idx in unmatched_tracks:
             self.tracks[track_idx].mark_missed()
         for detection_idx in unmatched_detections:
