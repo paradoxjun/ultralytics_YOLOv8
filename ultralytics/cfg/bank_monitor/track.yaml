@@ -1,19 +1,22 @@
 input_path: '/home/chenjun/code/datasets/bank_monitor/银行柜台监控_1.mp4'
 save_root: '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/track/'
 save_option:
-  save_dir: 'run'
-  save_txt: True
-  save_img: True
+  save: False  # 是否保存
+  root: '/home/chenjun/code/ultralytics_YOLOv8'   # 保存的根目录
+  dir: 'runs/detect/track'                        # 当前运行保存的子目录
+  txt: True     # 保存运行结果的 txt
+  img: True     # 保存运行结果生成的图片
 vid_stride: 1
 config_deep_sort: '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/trackers/deep_sort.yaml'
 fourcc: mp4v
 camera: -1
 device: 0
-half: False
-video_shape: [800, 800]
+verbose: False  # 控制台打印，控制循环内的持续输出，False不打印
+half: False                 # 暂未实现，控制推理精度
+video_shape: [800, 800]     # 暂未实现，resize视频
 class_name:
   0: ycj
   1: kx
   2: kx_dk
   3: money
-  4: ren
+  4: person
