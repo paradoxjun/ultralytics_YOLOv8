@@ -9,9 +9,9 @@ from ultralytics.data.augment import LetterBox
 from ultralytics.utils.ops import scale_image, scale_boxes, xywh2xyxy
 
 
-model = '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_05_18_s/weights/last.pt'
+model = '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_05_21_m/weights/best.pt'
 # yaml_path = '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/default.yaml'
-img_path = '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/assets/12083135_2668385748.jpg'
+img_path = '/home/chenjun/code/datasets/bank_monitor/data_without_neg/val/images/87203377_1688924277.jpg'
 
 # cfg = yaml_load(yaml_path)
 # print(cfg)
