@@ -187,6 +187,7 @@ class VideoTracker:
                     print('INFO: Frame %d Done. YOLO-time:(%.3fs) SORT-time:(%.3fs)' % (idx_frame, *cost_time))
 
                 plot_img = vt.plot_track(frame, deep_sort)                  # 绘制加入追踪框的图片
+
                 vt.save_track(idx_frame, plot_img, deep_sort, det_res)      # 保存跟踪结果
             else:
                 plot_img = vt.plot_track(frame, last_deepsort)              # 帧间隔小，物体运动幅度小，就用上一次结果
@@ -232,7 +233,7 @@ if __name__ == '__main__':
     track_cfg = '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/bank_monitor/track.yaml'
     overrides_1 = {"task": "detect",
                    "mode": "predict",
-                   "model": '/home/chenjun/code/ultralytics_YOLOv8/weights/yolov8n.pt',
+                   "model": '/home/chenjun/code/ultralytics_YOLOv8/weights/yolov8s.pt',
                    "verbose": False,
                    "classes": [0]
                    }
