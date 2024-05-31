@@ -146,8 +146,12 @@ class VideoTracker:
 
         # 获取视频的宽度、高度和帧率
         if self.track_cfg["save_option"]["save"]:
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if self.track_cfg["video_shape"][0] > 32 and self.track_cfg["video_shape"][1] > 32:
+                width = self.track_cfg["video_shape"][0]
+                height = self.track_cfg["video_shape"][1]
+            else:
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             fps = int(cap.get(cv2.CAP_PROP_FPS))
 
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 编码格式

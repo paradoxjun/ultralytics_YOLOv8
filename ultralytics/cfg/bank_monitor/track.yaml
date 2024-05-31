@@ -1,4 +1,4 @@
-input_path: '/home/chenjun/code/datasets/bank_monitor/save_video/t1.mp4'
+input_path: '/home/chenjun/code/datasets/bank_monitor/save_video/e1.mp4'
 save_root: '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/track_2/'
 save_option:
   save: False  # 是否保存
@@ -6,7 +6,7 @@ save_option:
   dir: 'runs/detect/track_2'                        # 当前运行保存的子目录
   txt: False     # 保存运行结果的 txt
   img: False     # 保存运行结果生成的图片
-vid_stride: 5
+vid_stride: 2
 config_deep_sort: '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/trackers/deep_sort.yaml'
 fourcc: mp4v
 camera: -1
