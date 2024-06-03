@@ -2,6 +2,7 @@ import torch
 from ultralytics.onnx.paddle_utils import load_onnx_model
 from ultralytics.onnx.paddle_utils import preprocess_image as preprocess
 from ultralytics.onnx.paddle_utils import spherical_normalize as postprocess
+import time
 
 
 class PPLCNetv2Predictor:
@@ -13,8 +14,9 @@ class PPLCNetv2Predictor:
 
     def __call__(self, img):
         img_batch = self._preprocess(img)
-        input_name = self.session.get_inputs()[0].name
-        feature = self.session.run(None, {input_name: img_batch})[0]     # ONNX模型推理
-        feature = self._postprocess(feature)
+        # start = time.time()
+        onnx_output = self.session.run(None, {self.session.get_inputs()[0].name: img_batch})[0]     # ONNX模型推理
+        feature = self._postprocess(onnx_output)
+        # print(f"推理{img_batch.shape[0]}张图片，用时：{time.time() - start}")
 
         return feature

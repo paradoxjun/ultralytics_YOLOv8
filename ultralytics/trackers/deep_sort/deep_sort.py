@@ -1,13 +1,13 @@
 import numpy as np
 import torch
 
-from .deep.feature_extractor import Extractor
-# from ultralytics.onnx.paddle_pplcnetv2 import PPLCNetv2Predictor as Extractor
+# from .deep.feature_extractor import Extractor
+from ultralytics.onnx.paddle_pplcnetv2 import PPLCNetv2Predictor as Extractor
 from .sort.nn_matching import NearestNeighborDistanceMetric
 from .sort.preprocessing import non_max_suppression
 from .sort.detection import Detection
 from .sort.tracker import Tracker
-
+import time
 __all__ = ['DeepSort']
 
 
@@ -30,13 +30,13 @@ class DeepSort(object):
 
         # get appearance feature with neural network (Deep) *********************************************************
         features = self._get_features(bbox_xywh, ori_img)
-        bbox_tlwh = self._xywh_to_tlwh(bbox_xywh)   # [cx,cy,w,h] -> [x1,y1,w,h]   top left
+        bbox_tlwh = self._xywh_to_tlwh(bbox_xywh)  # [cx,cy,w,h] -> [x1,y1,w,h]   top left
 
         #  generate detections class object for each person *********************************************************
         # filter object with less confidence
         # each Detection obj maintain the location(bbox_tlwh), confidence(conf), and appearance feature
         detections = [Detection(bbox_tlwh[i], conf, features[i], labels[i]) for i, conf in enumerate(confidences) if
-                      conf > self.min_confidence]   #修改处，对于detections新增了相应目标的label
+                      conf > self.min_confidence]  # 修改处，对于detections新增了相应目标的label
 
         # run on non-maximum supression (useless) *******************************************************************
         boxes = np.array([d.tlwh for d in detections])
@@ -61,10 +61,10 @@ class DeepSort(object):
             box = track.to_tlwh()  # (xc,yc,a,h) to (x1,y1,w,h)
             x1, y1, x2, y2 = self._tlwh_to_xyxy(box)
             track_id = track.track_id
-            label = track.label           # 新增此处，通过track.label取到track的label
-            confs = track.confs * 100     # 新增此处，通过track.confs取到track的confs
+            label = track.label  # 新增此处，通过track.label取到track的label
+            confs = track.confs * 100  # 新增此处，通过track.confs取到track的confs
             # 修改此处，使得outputs中包含了label
-            outputs.append(np.array([x1, y1, x2, y2, label, track_id, confs], dtype=np.int))
+            outputs.append(np.array([x1, y1, x2, y2, label, track_id, confs], dtype=np.int32))
         if len(outputs) > 0:
             outputs = np.stack(outputs, axis=0)  # (#obj, 5) (x1,y1,x2,y2,ID)
         return outputs
@@ -122,7 +122,9 @@ class DeepSort(object):
             im = ori_img[y1:y2, x1:x2]
             im_crops.append(im)
         if im_crops:
+            start = time.time()
             features = self.extractor(im_crops)
+            print(f"特征提取耗时：{time.time() - start}")
         else:
             features = np.array([])
         return features

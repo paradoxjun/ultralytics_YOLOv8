@@ -1,6 +1,6 @@
 DEEPSORT:
-  REID_CKPT: "/home/chenjun/code/ultralytics_YOLOv8/ultralytics/trackers/deep_sort/deep/checkpoint/ckpt.t7"
-  # REID_CKPT: "/home/chenjun/code/paddleclas/models/PPLCNetv2_onnx/inference.onnx"
+  # REID_CKPT: "/home/chenjun/code/ultralytics_YOLOv8/ultralytics/trackers/deep_sort/deep/checkpoint/ckpt.t7"
+  REID_CKPT: "/home/chenjun/code/ultralytics_YOLOv8/weights/PPLCNetv2_onnx/inference.onnx"
   MAX_DIST: 0.2           # 设置关联矩阵中余弦距离的最大阈值。较小值使关联更严格，较大相似度的检测框才关联。
   MIN_CONFIDENCE: 0.1     # 只有置信度高于此阈值的检测结果才会被用于跟踪。
   NMS_MAX_OVERLAP: 1.0    # 重叠比例超过这个阈值的检测框将被抑制。

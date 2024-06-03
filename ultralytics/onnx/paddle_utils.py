@@ -1,8 +1,10 @@
 import cv2
+import torch
 import onnxruntime as ort
 import numpy as np
 
 from ultralytics.onnx.paddle_img_preprocess import read_image, ResizeImage, NormalizeImage
+import torchvision.transforms as transforms
 
 
 _transform_ops = {
@@ -22,6 +24,11 @@ _transform_ops = {
         'channel_num': 3
     }
 }
+
+img_norm_torch = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(_transform_ops['NormalizeImage']['mean'], _transform_ops['NormalizeImage']['std'])
+        ])
 
 
 img_resize = ResizeImage(size=_transform_ops['ResizeImage']['size'],
@@ -47,9 +54,14 @@ def load_onnx_model(model_path, use_gpu=True):
     Returns: onnxruntime.InferenceSession: ONNX推理会话
     """
     sess_options = ort.SessionOptions()
-    sess_options.log_severity_level = 3     # 0表示最详细的日志级别
+    # sess_options.log_severity_level = 3     # 0表示最详细的日志级别
+    # sess_options.inter_op_num_threads = 4   # 线程数
+    # sess_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+    # sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    # sess_options.enable_profiling = True
+
     providers = ['CUDAExecutionProvider'] if use_gpu else ['CPUExecutionProvider']      # 选择执行提供程序
-    session = ort.InferenceSession(model_path, sess_options, providers=providers)       # 创建推理会话
+    session = ort.InferenceSession(model_path, sess_options=sess_options, providers=providers)       # 创建推理会话
 
     return session
 
@@ -67,14 +79,12 @@ def preprocess_image(image_path):
     if image_list is None:
         raise FileNotFoundError(f"Can not read image.")
 
-    processed_images = []
+    # 用torch.Tensor可以快3ms
+    image_batch = torch.cat([img_norm_torch(img_resize(img)).unsqueeze(0) for img in image_list], dim=0).float().numpy()
 
-    for image in image_list:
-        image = img_resize(image)                       # 变成(224, 224, 3)
-        image = img_norm(image).transpose(2, 0, 1)      # 归一化图像，从HWC转换到CHW格式
-        processed_images.append(image)                  # 增加批量维度    (1, 3, 224, 224)
-
-    image_batch = np.stack(processed_images, axis=0)
+    # 变成(224, 224, 3)，归一化图像，从HWC转换到CHW格式
+    # processed_images = [img_norm(img_resize(image)).transpose(2, 0, 1) for image in image_list]
+    # image_batch = np.stack(processed_images, axis=0)        # 增加批量维度    (1, 3, 224, 224)
 
     return image_batch
 

@@ -175,8 +175,6 @@ class VideoTracker:
             if self.track_cfg["video_shape"][0] > 32 and self.track_cfg["video_shape"][1] > 32:
                 frame = resize_and_pad(frame, self.track_cfg["video_shape"])
 
-            # frame = apply_gaussian_blur(frame)
-
             if idx_frame % self.track_cfg["vid_stride"] == 0:
                 deep_sort, det_res, cost_time = vt.image_track(frame)       # 追踪结果，检测结果，消耗时间
                 last_deepsort = deep_sort
@@ -187,7 +185,6 @@ class VideoTracker:
                     print('INFO: Frame %d Done. YOLO-time:(%.3fs) SORT-time:(%.3fs)' % (idx_frame, *cost_time))
 
                 plot_img = vt.plot_track(frame, deep_sort)                  # 绘制加入追踪框的图片
-
                 vt.save_track(idx_frame, plot_img, deep_sort, det_res)      # 保存跟踪结果
             else:
                 plot_img = vt.plot_track(frame, last_deepsort)              # 帧间隔小，物体运动幅度小，就用上一次结果
@@ -208,7 +205,7 @@ class VideoTracker:
 
         cap.release()   # 释放读取资源
         if self.track_cfg["save_option"]["save"]:
-            out.release()   # 释放写入资源
+            out.release()  # 释放写入资源
         cv2.destroyAllWindows()
 
         avg_yolo_t, avg_sort_t = sum(yolo_time[1:]) / (len(yolo_time) - 1), sum(sort_time[1:]) / (len(sort_time) - 1)
@@ -217,31 +214,20 @@ class VideoTracker:
         print('INFO: Total Frame: %d, Total time (%.3fs), Avg fps (%.3f)' % (idx_frame, total_t, avg_fps))
 
 
-def apply_gaussian_blur(image, ksize=(1, 1), sigmaX=0):
-    """
-    对指定的图片应用高斯模糊
-    :param image: 要处理的图片
-    :param ksize: 高斯核的大小
-    :param sigmaX: 高斯核在 X 方向的标准差
-    :return: 处理后的图片
-    """
-    blurred_image = cv2.GaussianBlur(image, ksize, sigmaX)
-    return blurred_image
-
-
 if __name__ == '__main__':
-    track_cfg = '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/bank_monitor/track.yaml'
+    track_cfg = r'/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/bank_monitor/track.yaml'
     overrides_1 = {"task": "detect",
                    "mode": "predict",
-                   "model": '/home/chenjun/code/ultralytics_YOLOv8/weights/yolov8s.pt',
+                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/weights/yolov8s.pt',
                    "verbose": False,
                    "classes": [0]
                    }
 
     overrides_2 = {"task": "detect",
                    "mode": "predict",
-                   "model": '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_05_21_m/weights/best.pt',
+                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_05_25_m/weights/best.pt',
                    "verbose": False,
+                   "classes": [0, 1, 2, 3]
                    }
 
     predictor_1 = BankDetectionPredictor(overrides=overrides_1)

@@ -27,7 +27,7 @@ class Detection(object):
     """
 
     def __init__(self, tlwh, confidence, feature, label):  # 新增label
-        self.tlwh = np.asarray(tlwh, dtype=np.float)  # x1, y1, w, h
+        self.tlwh = np.asarray(tlwh, dtype=np.float32)  # x1, y1, w, h
         self.confidence = float(confidence)
         self.feature = np.asarray(feature, dtype=np.float32)
         self.label = label  # 新增此行
