@@ -6,7 +6,7 @@ from ultralytics.utils import yaml_load
 from ultralytics.utils.plotting import colors as set_color
 from ultralytics.trackers.deep_sort import build_tracker
 from ultralytics.task_bank.predict import BankDetectionPredictor
-from ultralytics.task_bank.utils import get_config
+from ultralytics.task_bank.utils import get_config, resize_and_pad
 from pathlib import Path
 from datetime import datetime
 
@@ -30,8 +30,8 @@ class VideoTracker:
         self.deepsort_arg = get_config(self.track_cfg["config_deep_sort"])      # 读取deep_sort.yaml为EasyDict类
         self.predictors = predictors                # 检测器列表
         use_cuda = self.track_cfg["device"] != "cpu" and torch.cuda.is_available()
-        if self.track_cfg["save_option"]["txt"] or self.track_cfg["save_option"]["img"]:    # 需要保存文本或图片时创建
-            self.save_dir = self.make_save_dir()
+        # if self.track_cfg["save_option"]["txt"] or self.track_cfg["save_option"]["img"]:    # 需要保存文本或图片时创建
+        self.save_dir = self.make_save_dir()
         self.deepsort = build_tracker(self.deepsort_arg, use_cuda=use_cuda)     # 实例化deep_sort类
 
         print("INFO: Tracker init finished...")
@@ -146,8 +146,12 @@ class VideoTracker:
 
         # 获取视频的宽度、高度和帧率
         if self.track_cfg["save_option"]["save"]:
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if self.track_cfg["video_shape"][0] > 32 and self.track_cfg["video_shape"][1] > 32:
+                width = self.track_cfg["video_shape"][0]
+                height = self.track_cfg["video_shape"][1]
+            else:
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             fps = int(cap.get(cv2.CAP_PROP_FPS))
 
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 编码格式
@@ -168,6 +172,11 @@ class VideoTracker:
             if not ret or cv2.waitKey(1) & 0xFF == ord('q'):    # 结束 或 按 'q' 键退出
                 break
 
+            if self.track_cfg["video_shape"][0] > 32 and self.track_cfg["video_shape"][1] > 32:
+                frame = resize_and_pad(frame, self.track_cfg["video_shape"])
+
+            # frame = apply_gaussian_blur(frame)
+
             if idx_frame % self.track_cfg["vid_stride"] == 0:
                 deep_sort, det_res, cost_time = vt.image_track(frame)       # 追踪结果，检测结果，消耗时间
                 last_deepsort = deep_sort
@@ -178,6 +187,7 @@ class VideoTracker:
                     print('INFO: Frame %d Done. YOLO-time:(%.3fs) SORT-time:(%.3fs)' % (idx_frame, *cost_time))
 
                 plot_img = vt.plot_track(frame, deep_sort)                  # 绘制加入追踪框的图片
+
                 vt.save_track(idx_frame, plot_img, deep_sort, det_res)      # 保存跟踪结果
             else:
                 plot_img = vt.plot_track(frame, last_deepsort)              # 帧间隔小，物体运动幅度小，就用上一次结果
@@ -207,11 +217,23 @@ class VideoTracker:
         print('INFO: Total Frame: %d, Total time (%.3fs), Avg fps (%.3f)' % (idx_frame, total_t, avg_fps))
 
 
+def apply_gaussian_blur(image, ksize=(1, 1), sigmaX=0):
+    """
+    对指定的图片应用高斯模糊
+    :param image: 要处理的图片
+    :param ksize: 高斯核的大小
+    :param sigmaX: 高斯核在 X 方向的标准差
+    :return: 处理后的图片
+    """
+    blurred_image = cv2.GaussianBlur(image, ksize, sigmaX)
+    return blurred_image
+
+
 if __name__ == '__main__':
     track_cfg = '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/bank_monitor/track.yaml'
     overrides_1 = {"task": "detect",
                    "mode": "predict",
-                   "model": '/home/chenjun/code/ultralytics_YOLOv8/weights/yolov8m.pt',
+                   "model": '/home/chenjun/code/ultralytics_YOLOv8/weights/yolov8s.pt',
                    "verbose": False,
                    "classes": [0]
                    }
@@ -220,7 +242,6 @@ if __name__ == '__main__':
                    "mode": "predict",
                    "model": '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_05_21_m/weights/best.pt',
                    "verbose": False,
-                   "classes": [0, 1, 2, 3]
                    }
 
     predictor_1 = BankDetectionPredictor(overrides=overrides_1)

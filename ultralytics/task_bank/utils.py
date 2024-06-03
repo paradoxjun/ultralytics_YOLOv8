@@ -1,6 +1,8 @@
 import os
 import yaml
 import torch
+import cv2
+import numpy as np
 from easydict import EasyDict
 
 palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
@@ -36,6 +38,33 @@ class YamlParser(EasyDict):
 
 def get_config(config_file=None):
     return YamlParser(config_file=config_file)
+
+
+def resize_and_pad(frame, target_size=(800, 800), pad_color=(114, 114, 114)):
+    h, w, _ = frame.shape
+    target_w, target_h = target_size
+
+    # 计算缩放比例
+    scale = min(target_w / w, target_h / h)
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+
+    # 缩放图像
+    resized_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    # 创建填充后的图像
+    padded_frame = np.full((target_h, target_w, 3), pad_color, dtype=np.uint8)
+
+    # 计算填充位置
+    top = (target_h - new_h) // 2
+    bottom = top + new_h
+    left = (target_w - new_w) // 2
+    right = left + new_w
+
+    # 将缩放后的图像放置在填充后的图像上
+    padded_frame[top:bottom, left:right] = resized_frame
+
+    return padded_frame
 
 
 def transform_and_concat_tensors(tensor_list, k1_v1_dict_list, k2_v2_dict):
