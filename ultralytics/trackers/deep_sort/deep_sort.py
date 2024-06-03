@@ -1,8 +1,8 @@
 import numpy as np
 import torch
 
-# from .deep.feature_extractor import Extractor
-from ultralytics.onnx.paddle_pplcnetv2 import PPLCNetv2Predictor as Extractor
+from .deep.feature_extractor import Extractor
+# from ultralytics.onnx.paddle_pplcnetv2 import PPLCNetv2Predictor as Extractor
 from .sort.nn_matching import NearestNeighborDistanceMetric
 from .sort.preprocessing import non_max_suppression
 from .sort.detection import Detection
@@ -24,6 +24,9 @@ class DeepSort(object):
         # tracker maintain a list contains(self.tracks) for each Track object
         self.tracker = Tracker(metric, max_iou_distance=max_iou_distance, max_age=max_age, n_init=n_init)
 
+        self.new_id_dict = {}   # 哈希映射
+        self.new_id_index = 1   # 顺序增长的下表索引
+
     def update(self, bbox_xywh, confidences, ori_img, labels):  # 修改处，新增了labels输入
         # bbox_xywh (#obj,4), [xc,yc, w, h]  conf (#obj,1)   bounding box for each person
         self.height, self.width = ori_img.shape[:2]
@@ -39,10 +42,10 @@ class DeepSort(object):
                       conf > self.min_confidence]  # 修改处，对于detections新增了相应目标的label
 
         # run on non-maximum supression (useless) *******************************************************************
-        boxes = np.array([d.tlwh for d in detections])
-        scores = np.array([d.confidence for d in detections])
-        indices = non_max_suppression(boxes, self.nms_max_overlap, scores)  # Here, nms_max_overlap is 1
-        detections = [detections[i] for i in indices]
+        # boxes = np.array([d.tlwh for d in detections])
+        # scores = np.array([d.confidence for d in detections])
+        # indices = non_max_suppression(boxes, self.nms_max_overlap, scores)  # Here, nms_max_overlap is 1
+        # detections = [detections[i] for i in indices]
 
         # update tracker ********************************************************************************************
         self.tracker.predict()  # predict based on t-1 info
@@ -60,7 +63,14 @@ class DeepSort(object):
 
             box = track.to_tlwh()  # (xc,yc,a,h) to (x1,y1,w,h)
             x1, y1, x2, y2 = self._tlwh_to_xyxy(box)
-            track_id = track.track_id
+            # track_id = track.track_id
+            if track.track_id in self.new_id_dict.keys():   # 哈希表中已经存在，直接返回存在的值
+                track_id = self.new_id_dict[track.track_id]
+            else:
+                self.new_id_dict[track.track_id] = self.new_id_index    # 不存在，则返回下一个索引
+                track_id = self.new_id_index
+                self.new_id_index += 1
+
             label = track.label  # 新增此处，通过track.label取到track的label
             confs = track.confs * 100  # 新增此处，通过track.confs取到track的confs
             # 修改此处，使得outputs中包含了label
@@ -122,9 +132,9 @@ class DeepSort(object):
             im = ori_img[y1:y2, x1:x2]
             im_crops.append(im)
         if im_crops:
-            start = time.time()
+            # start = time.time()
             features = self.extractor(im_crops)
-            print(f"特征提取耗时：{time.time() - start}")
+            # print(f"特征提取耗时：{time.time() - start}")
         else:
             features = np.array([])
         return features

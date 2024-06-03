@@ -104,6 +104,24 @@ def transform_and_concat_tensors(tensor_list, k1_v1_dict_list, k2_v2_dict):
     return result_tensor
 
 
+def split_indices(labels, group1_classes=(0, 1, 2, 4), group2_classes=(3,)):
+    """
+    将标签张量根据给定的类别划分成两部分，并返回对应的索引。
+
+    参数：
+    labels (torch.Tensor): 标签张量。
+    group1_classes (set): 第一组类别值的集合。
+    group2_classes (set): 第二组类别值的集合。
+
+    返回：
+    tuple: 包含两个列表，分别为group1和group2的索引。
+    """
+    group1_indices = [i for i, label in enumerate(labels) if label in group1_classes]
+    group2_indices = [i for i, label in enumerate(labels) if label in group2_classes]
+
+    return group1_indices, group2_indices
+
+
 if __name__ == '__main__':
     for i in range(82):
         print(compute_color_for_labels(i))
