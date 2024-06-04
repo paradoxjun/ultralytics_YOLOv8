@@ -122,6 +122,67 @@ def split_indices(labels, group1_classes=(0, 1, 2, 4), group2_classes=(3,)):
     return group1_indices, group2_indices
 
 
+def apply_indices(tensor, indices):
+    """
+    根据索引返回张量中的元素。
+    Args:
+        tensor: 原张量
+        indices: 索引
+
+    Returns:
+        根据索引返回张量中的元素，保持原张量的shape。
+    """
+    original_shape = tensor.shape
+    num_dims = len(original_shape)
+
+    if indices.numel() == 0:
+        empty_shape = list(original_shape)
+        empty_shape[0] = 0
+        return torch.empty(empty_shape, dtype=tensor.dtype, device=tensor.device)
+
+    selected = tensor[indices]
+
+    if selected.ndimension() == num_dims - 1:
+        selected = selected.unsqueeze(0)
+
+    return selected
+
+
+def split_indices_deepsort(deepsort_outputs, labels):
+    """
+    根据label拆分deepsort输出，并返回索引字典。
+
+    :param deepsort_outputs: numpy数组，形状为 (n, 6)，其中包含 x1, y1, x2, y2, label, track_ID, confs
+    :param labels: list，包含可能的label值
+    :return: dict，将标签作为key，如果标签存在，value为对应的索引列表；如果不存在，value为None
+    """
+    # 初始化结果字典
+    result = {label: None for label in labels}
+
+    # 遍历所有的输出，按label分类
+    for label in labels:
+        indices = np.where(deepsort_outputs[:, 4] == label)[0]
+        if indices.size > 0:
+            result[label] = indices
+
+    return result
+
+
+def ioa(bbox1, bbox2):
+    """
+    计算两个检测框的交集面积比上当前检测框的面积(IOA)
+    """
+    x1, y1, x2, y2 = bbox1
+    x1_, y1_, x2_, y2_ = bbox2
+    inter_x1 = np.maximum(x1, x1_)
+    inter_y1 = np.maximum(y1, y1_)
+    inter_x2 = np.minimum(x2, x2_)
+    inter_y2 = np.minimum(y2, y2_)
+    inter_area = np.maximum(0, inter_x2 - inter_x1) * np.maximum(0, inter_y2 - inter_y1)
+    bbox2_area = (x2_ - x1_) * (y2_ - y1_)
+    return inter_area / bbox2_area
+
+
 if __name__ == '__main__':
     for i in range(82):
         print(compute_color_for_labels(i))

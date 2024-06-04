@@ -6,7 +6,9 @@ from ultralytics.utils import yaml_load
 from ultralytics.utils.plotting import colors as set_color
 from ultralytics.trackers.deep_sort import build_tracker
 from ultralytics.task_bank.predict import BankDetectionPredictor
-from ultralytics.task_bank.utils import get_config, resize_and_pad, transform_and_concat_tensors, split_indices
+from ultralytics.task_bank.utils import (get_config, resize_and_pad, transform_and_concat_tensors, split_indices,
+                                         split_indices_deepsort, apply_indices)
+from ultralytics.task_bank.obj_class import filter_person_boxes, MoneyCounterTracker
 from pathlib import Path
 from datetime import datetime
 
@@ -32,6 +34,8 @@ class VideoTracker:
         self.save_dir = self.make_save_dir()
         use_cuda = self.track_cfg["device"] != "cpu" and torch.cuda.is_available()
         self.deepsort = build_tracker(self.deepsort_arg, use_cuda=use_cuda)     # 实例化deep_sort类
+
+        self.money_counter_tracker = MoneyCounterTracker()
 
         print("INFO: Tracker init finished...")
 
@@ -70,16 +74,25 @@ class VideoTracker:
 
         return v_cap
 
-    def image_track(self, img):     # 生成追踪目标的id
+    def image_track(self, img, idx_frame=0):     # 生成追踪目标的id
         t1 = time_sync()
         det_person = self.predictors[0](source=img)[0]     # 官方预训练权重，检测人的位置
         det_things = self.predictors[1](source=img)[0]     # 自己训练的权重，检测物的位置
         t2 = time_sync()
 
-        bbox_xywh = torch.cat((det_person.boxes.xywh, det_things.boxes.xywh)).cpu()     # xywh目标框
-        bbox_xyxy = torch.cat((det_person.boxes.xyxy, det_things.boxes.xyxy)).cpu()     # xyxy目标框
-        confs = torch.cat((det_person.boxes.conf, det_things.boxes.conf)).cpu()         # 置信度
-        cls = transform_and_concat_tensors([det_person.boxes.cls, det_things.boxes.cls],
+        # print(det_person.boxes.xyxy, det_person.boxes.conf)
+        det_person_index = filter_person_boxes(det_person.boxes.xyxy, det_person.boxes.conf)
+
+        det_person_xywh = apply_indices(det_person.boxes.xywh, det_person_index)
+        det_person_xyxy = apply_indices(det_person.boxes.xyxy, det_person_index)
+        # print(det_person_index, det_person_xyxy)
+        # print('*' * 20)
+
+        bbox_xywh = torch.cat((det_person_xywh, det_things.boxes.xywh)).cpu()     # xywh目标框
+        bbox_xyxy = torch.cat((det_person_xyxy, det_things.boxes.xyxy)).cpu()     # xyxy目标框
+
+        confs = torch.cat((apply_indices(det_person.boxes.conf, det_person_index), det_things.boxes.conf)).cpu()         # 置信度
+        cls = transform_and_concat_tensors([apply_indices(det_person.boxes.cls, det_person_index), det_things.boxes.cls],
                                            [det_person.names, det_things.names],
                                            self.track_cfg['class_name']).cpu()          # 标签，多检测器需要调整类别标签
 
@@ -89,9 +102,18 @@ class VideoTracker:
         confs_d, confs_s = confs[indices_d], confs[indices_s]
         cls_d, cls_s = cls[indices_d], cls[indices_s],
 
-        if len(cls) > 0:
+        if len(cls_d) > 0:
             deepsort_outputs = self.deepsort.update(bbox_xywh_d, confs_d, img, cls_d)   # x1,y1,x2,y2,label,track_ID,confs
             # print(f"bbox_xywh: {bbox_xywh}, confs: {confs}, cls: {cls}, outputs: {outputs}")
+
+            if len(deepsort_outputs) > 0:
+                split_index = split_indices_deepsort(deepsort_outputs, (0, 1, 2, 4))
+                money_counter = self.money_counter_tracker.update(
+                    idx_frame, deepsort_outputs[split_index[0]], deepsort_outputs[split_index[4]])
+
+                if split_index[4] is not None:
+                    money_counter.extend(deepsort_outputs[split_index[4]])
+                deepsort_outputs = money_counter
         else:
             deepsort_outputs = np.zeros((0, 6), dtype=np.int32)               # 或者返回空
 
@@ -183,7 +205,7 @@ class VideoTracker:
                 frame = resize_and_pad(frame, self.track_cfg["video_shape"])
 
             if idx_frame % self.track_cfg["vid_stride"] == 0:
-                deep_sort, det_res, cost_time = vt.image_track(frame)       # 追踪结果，检测结果，消耗时间
+                deep_sort, det_res, cost_time = vt.image_track(frame, idx_frame)       # 追踪结果，检测结果，消耗时间
                 last_deepsort = deep_sort
                 yolo_time.append(cost_time[0])          # yolo推理时间
                 sort_time.append(cost_time[1])          # deepsort跟踪时间
