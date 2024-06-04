@@ -1,5 +1,6 @@
 from collections import deque
 
+
 class MoneyCounter:
     def __init__(self, idx_frame, track_id, bbox, confidence, max_history=5):
         self.track_id = track_id        # 当前跟踪ID
