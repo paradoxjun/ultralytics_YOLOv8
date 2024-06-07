@@ -8,7 +8,7 @@ from ultralytics.trackers.deep_sort import build_tracker
 from ultralytics.task_bank.predict import BankDetectionPredictor
 from ultralytics.task_bank.utils import (get_config, resize_and_pad, transform_and_concat_tensors, split_indices,
                                          split_indices_deepsort, apply_indices)
-from ultralytics.task_bank.obj_class import filter_person_boxes, MoneyCounterTracker
+from ultralytics.task_bank.obj_class import filter_person_boxes, MoneyCounterTracker, BoxTracker
 from pathlib import Path
 from datetime import datetime
 
@@ -36,6 +36,7 @@ class VideoTracker:
         self.deepsort = build_tracker(self.deepsort_arg, use_cuda=use_cuda)     # 实例化deep_sort类
 
         self.money_counter_tracker = MoneyCounterTracker()
+        self.kx_tracker = BoxTracker()
 
         print("INFO: Tracker init finished...")
 
@@ -85,14 +86,16 @@ class VideoTracker:
 
         det_person_xywh = apply_indices(det_person.boxes.xywh, det_person_index)
         det_person_xyxy = apply_indices(det_person.boxes.xyxy, det_person_index)
+        det_person_conf = apply_indices(det_person.boxes.conf, det_person_index)
+        det_person_cls = apply_indices(det_person.boxes.cls, det_person_index)
         # print(det_person_index, det_person_xyxy)
         # print('*' * 20)
 
         bbox_xywh = torch.cat((det_person_xywh, det_things.boxes.xywh)).cpu()     # xywh目标框
         bbox_xyxy = torch.cat((det_person_xyxy, det_things.boxes.xyxy)).cpu()     # xyxy目标框
 
-        confs = torch.cat((apply_indices(det_person.boxes.conf, det_person_index), det_things.boxes.conf)).cpu()         # 置信度
-        cls = transform_and_concat_tensors([apply_indices(det_person.boxes.cls, det_person_index), det_things.boxes.cls],
+        confs = torch.cat([det_person_conf, det_things.boxes.conf]).cpu()  # 置信度
+        cls = transform_and_concat_tensors([det_person_cls, det_things.boxes.cls],
                                            [det_person.names, det_things.names],
                                            self.track_cfg['class_name']).cpu()          # 标签，多检测器需要调整类别标签
 
@@ -107,13 +110,22 @@ class VideoTracker:
             # print(f"bbox_xywh: {bbox_xywh}, confs: {confs}, cls: {cls}, outputs: {outputs}")
 
             if len(deepsort_outputs) > 0:
-                split_index = split_indices_deepsort(deepsort_outputs, (0, 1, 2, 4))
-                money_counter = self.money_counter_tracker.update(
-                    idx_frame, deepsort_outputs[split_index[0]], deepsort_outputs[split_index[4]])
+                split_index = split_indices_deepsort(deepsort_outputs, (0, 1, 2, 3, 4))    # 钱没放入检测
 
-                if split_index[4] is not None:
-                    money_counter.extend(deepsort_outputs[split_index[4]])
-                deepsort_outputs = money_counter
+                res_det = [np.empty((0, 7)) for i in range(5)]
+
+                for i in range(5):
+                    if split_index[i] is not None:
+                        res_det[i] = deepsort_outputs[split_index[i]]
+
+                money_counter = self.money_counter_tracker.update(idx_frame, res_det[0], res_det[4])
+
+                kx_all = np.concatenate([res_det[1], res_det[2]], axis=0)
+                kx = self.kx_tracker.update(idx_frame, kx_all, res_det[4])
+                # print(kx[1])
+
+                deepsort_outputs = np.concatenate([money_counter, kx[0], res_det[4]], axis=0)
+
         else:
             deepsort_outputs = np.zeros((0, 6), dtype=np.int32)               # 或者返回空
 

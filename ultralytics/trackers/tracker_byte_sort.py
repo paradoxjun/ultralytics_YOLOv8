@@ -1,6 +1,4 @@
-"""
-代码参考DeepSORT_YOLOv5_Pytorch
-"""
+from ultralytics.trackers.byte_tracker import BYTETracker
 from ultralytics.utils.torch_utils import time_sync
 from ultralytics.utils import yaml_load
 from ultralytics.utils.plotting import colors as set_color
@@ -24,15 +22,23 @@ sys.path.append(os.path.abspath(os.path.join(currentUrl)))
 cudnn.benchmark = True
 
 
+byte_sort_yaml = r'/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/trackers/bytetrack.yaml'
+
+byte_sort_config = get_config(byte_sort_yaml)
+# byte_sort = BYTETracker(byte_sort_config)
+
+
 class VideoTracker:
     def __init__(self, track_cfg, predictors):
         self.track_cfg = yaml_load(track_cfg)       # v8内置方法读取track.yaml文件为字典
-        self.deepsort_arg = get_config(self.track_cfg["config_deep_sort"])      # 读取deep_sort.yaml为EasyDict类
+        # self.deepsort_arg = get_config(self.track_cfg["config_deep_sort"])      # 读取deep_sort.yaml为EasyDict类
         self.predictors = predictors                # 检测器列表
         use_cuda = self.track_cfg["device"] != "cpu" and torch.cuda.is_available()
         # if self.track_cfg["save_option"]["txt"] or self.track_cfg["save_option"]["img"]:    # 需要保存文本或图片时创建
         self.save_dir = self.make_save_dir()
-        self.deepsort = build_tracker(self.deepsort_arg, use_cuda=use_cuda)     # 实例化deep_sort类
+
+        # self.deepsort = build_tracker(self.deepsort_arg, use_cuda=use_cuda)     # 实例化deep_sort类
+        self.deepsort = BYTETracker(byte_sort_config)
 
         print("INFO: Tracker init finished...")
 
@@ -52,29 +58,21 @@ class VideoTracker:
 
     def image_track(self, img):     # 生成追踪目标的id
         t1 = time_sync()
-        det_person = self.predictors[0](source=img)[0]     # 官方预训练权重，检测人的位置
-        det_things = self.predictors[1](source=img)[0]     # 自己训练的权重，检测物的位置
+        det_person = self.predictors[0](source=img)[0].cpu()     # 官方预训练权重，检测人的位置
+        det_things = self.predictors[1](source=img)[0].cpu()     # 自己训练的权重，检测物的位置
         t2 = time_sync()
 
-        bbox_xywh = torch.cat((det_person.boxes.xywh, det_things.boxes.xywh)).cpu()     # xywh目标框
-        bbox_xyxy = torch.cat((det_person.boxes.xyxy, det_things.boxes.xyxy)).cpu()     # xyxy目标框
-        confs = torch.cat((det_person.boxes.conf, det_things.boxes.conf)).cpu()         # 置信度
-        cls = torch.cat((det_person.boxes.cls + 4, det_things.boxes.cls)).cpu()         # 标签，多检测器需要调整类别标签
-
-        if len(cls) > 0:
-            deepsort_outputs = self.deepsort.update(bbox_xywh, confs, img, cls)   # x1,y1,x2,y2,label,track_ID,confs
-            # print(f"bbox_xywh: {bbox_xywh}, confs: {confs}, cls: {cls}, outputs: {outputs}")
-        else:
-            deepsort_outputs = np.zeros((0, 6), dtype=np.int32)               # 或者返回空
+        # print(type(det_things), det_things.boxes.conf)
+        deepsort_outputs = self.deepsort.update(det_things.boxes)   # x1,y1,x2,y2,label,track_ID,confs
+        # print(deepsort_outputs)
 
         t3 = time.time()
-        return deepsort_outputs, [bbox_xywh, bbox_xyxy, cls, confs], [t2 - t1, t3 - t2]
+        return deepsort_outputs, [t2 - t1, t3 - t2]
 
     def plot_track(self, img, deepsort_output, offset=(0, 0)):      # 在一帧上绘制检测结果（类别+置信度+追踪ID）
         for i, box in enumerate(deepsort_output):
-            x1, y1, x2, y2, label, track_id, confidence = list(map(int, box))       # 将结果均映射为整型
-            if label == 3:
-                continue
+            x1, y1, x2, y2, track_id, confidence, label, order = list(map(int, box))       # 将结果均映射为整型
+
             x1, y1, x2, y2 = x1 + offset[0], y1 + offset[1], x2 + offset[0], y2 + offset[1]     # 文本框偏移（二次检测中再优化）
 
             # 设置显示内容：文本框左上角为“标签名：置信度”，右上角为“跟踪id”，文本框颜色由类别决定
@@ -178,7 +176,7 @@ class VideoTracker:
                 frame = resize_and_pad(frame, self.track_cfg["video_shape"])
 
             if idx_frame % self.track_cfg["vid_stride"] == 0:
-                deep_sort, det_res, cost_time = vt.image_track(frame)       # 追踪结果，检测结果，消耗时间
+                deep_sort, cost_time = vt.image_track(frame)       # 追踪结果，检测结果，消耗时间
                 last_deepsort = deep_sort
                 yolo_time.append(cost_time[0])          # yolo推理时间
                 sort_time.append(cost_time[1])          # deepsort跟踪时间
@@ -187,7 +185,7 @@ class VideoTracker:
                     print('INFO: Frame %d Done. YOLO-time:(%.3fs) SORT-time:(%.3fs)' % (idx_frame, *cost_time))
 
                 plot_img = vt.plot_track(frame, deep_sort)                  # 绘制加入追踪框的图片
-                vt.save_track(idx_frame, plot_img, deep_sort, det_res)      # 保存跟踪结果
+                vt.save_track(idx_frame, plot_img, deep_sort)      # 保存跟踪结果
             else:
                 plot_img = vt.plot_track(frame, last_deepsort)              # 帧间隔小，物体运动幅度小，就用上一次结果
 
