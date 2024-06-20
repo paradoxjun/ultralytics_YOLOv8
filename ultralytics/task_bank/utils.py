@@ -104,48 +104,81 @@ def transform_and_concat_tensors(tensor_list, k1_v1_dict_list, k2_v2_dict):
     return result_tensor
 
 
-def split_indices(labels, group1_classes=(0, 1, 2, 4), group2_classes=(3,)):
+def split_indices(labels, label_need=(1, 2)):
     """
     将标签张量根据给定的类别划分成两部分，并返回对应的索引。
 
     参数：
-    labels (torch.Tensor): 标签张量。
-    group1_classes (set): 第一组类别值的集合。
-    group2_classes (set): 第二组类别值的集合。
+    labels (np.ndarray): 标签数组，类型为np.float32。
+    label_need (set): 一组类别值的集合。
 
     返回：
-    tuple: 包含两个列表，分别为group1和group2的索引。
+    list: group的索引。
     """
-    group1_indices = [i for i, label in enumerate(labels) if label in group1_classes]
-    group2_indices = [i for i, label in enumerate(labels) if label in group2_classes]
+    # 将labels转换为np.int32
+    labels = labels.astype(np.int32)
+    return [i for i, label in enumerate(labels) if label in label_need]
 
-    return group1_indices, group2_indices
 
-
-def apply_indices(tensor, indices):
+def apply_indices(data, indices):
     """
-    根据索引返回张量中的元素。
+    根据索引返回张量或数组中的元素。
     Args:
-        tensor: 原张量
-        indices: 索引
+        data: 原数据 (可以是PyTorch张量或NumPy数组)
+        indices: 索引 (NumPy数组)
 
     Returns:
-        根据索引返回张量中的元素，保持原张量的shape。
+        根据索引返回数据中的元素，保持原数据的shape。
     """
-    original_shape = tensor.shape
-    num_dims = len(original_shape)
+    if isinstance(data, torch.Tensor):
+        # 处理PyTorch张量
+        original_shape = data.shape
+        num_dims = len(original_shape)
 
-    if indices.numel() == 0:
-        empty_shape = list(original_shape)
-        empty_shape[0] = 0
-        return torch.empty(empty_shape, dtype=tensor.dtype, device=tensor.device)
+        # 将NumPy索引转换为PyTorch张量
+        indices = torch.tensor(indices, dtype=torch.int32, device=data.device)
 
-    selected = tensor[indices]
+        if indices.numel() == 0:
+            empty_shape = list(original_shape)
+            empty_shape[0] = 0
+            return torch.empty(empty_shape, dtype=data.dtype, device=data.device)
 
-    if selected.ndimension() == num_dims - 1:
-        selected = selected.unsqueeze(0)
+        selected = data[indices]
 
-    return selected
+        if selected.ndimension() == num_dims - 1:
+            selected = selected.unsqueeze(0)
+
+        return selected.cpu().numpy()
+
+    elif isinstance(data, np.ndarray):
+        # 处理NumPy数组
+        original_shape = data.shape
+        num_dims = len(original_shape)
+
+        if indices.size == 0:
+            empty_shape = list(original_shape)
+            empty_shape[0] = 0
+            return np.empty(empty_shape, dtype=data.dtype)
+
+        selected = data[indices]
+
+        if selected.ndim == num_dims - 1:
+            selected = np.expand_dims(selected, axis=0)
+
+        return selected
+
+    else:
+        raise TypeError("data must be a PyTorch tensor or a NumPy array")
+
+
+def get_bytetrack_input_by_label(det_res, label_need):
+    indices = split_indices(det_res.boxes.cls.numpy(), label_need)
+
+    xywh = apply_indices(det_res.boxes.xywh, indices)
+    conf = apply_indices(det_res.boxes.conf, indices)
+    cls = apply_indices(det_res.boxes.cls, indices)
+
+    return xywh, conf, cls
 
 
 def split_indices_deepsort(deepsort_outputs, labels):
@@ -168,19 +201,33 @@ def split_indices_deepsort(deepsort_outputs, labels):
     return result
 
 
-def ioa(bbox1, bbox2):
+def draw_dashed_rectangle(img, x1, y1, x2, y2, color, thickness=2, dash_length=10):
     """
-    计算两个检测框的交集面积比上当前检测框的面积(IOA)
+    绘制虚线矩形框。
+    Args:
+        img: 要绘制的图像。
+        x1, y1, x2, y2: 矩形框的左上角和右下角坐标。
+        color: 矩形框的颜色。
+        thickness: 线条的粗细。
+        dash_length: 虚线的长度。
     """
-    x1, y1, x2, y2 = bbox1
-    x1_, y1_, x2_, y2_ = bbox2
-    inter_x1 = np.maximum(x1, x1_)
-    inter_y1 = np.maximum(y1, y1_)
-    inter_x2 = np.minimum(x2, x2_)
-    inter_y2 = np.minimum(y2, y2_)
-    inter_area = np.maximum(0, inter_x2 - inter_x1) * np.maximum(0, inter_y2 - inter_y1)
-    bbox2_area = (x2_ - x1_) * (y2_ - y1_)
-    return inter_area / bbox2_area
+    line_type = cv2.LINE_AA  # 抗锯齿线条类型
+
+    # 绘制上边框
+    for i in range(x1, x2, dash_length * 2):
+        cv2.line(img, (i, y1), (min(i + dash_length, x2), y1), color, thickness, line_type)
+
+    # 绘制下边框
+    for i in range(x1, x2, dash_length * 2):
+        cv2.line(img, (i, y2), (min(i + dash_length, x2), y2), color, thickness, line_type)
+
+    # 绘制左边框
+    for i in range(y1, y2, dash_length * 2):
+        cv2.line(img, (x1, i), (x1, min(i + dash_length, y2)), color, thickness, line_type)
+
+    # 绘制右边框
+    for i in range(y1, y2, dash_length * 2):
+        cv2.line(img, (x2, i), (x2, min(i + dash_length, y2)), color, thickness, line_type)
 
 
 if __name__ == '__main__':

@@ -6,7 +6,7 @@ from ultralytics.utils import yaml_load
 from ultralytics.utils.plotting import colors as set_color
 from ultralytics.trackers.deep_sort import build_tracker
 from ultralytics.task_bank.predict import BankDetectionPredictor
-from ultralytics.task_bank.utils import get_config, resize_and_pad
+from ultralytics.task_bank.utils import get_config
 from pathlib import Path
 from datetime import datetime
 
@@ -30,8 +30,8 @@ class VideoTracker:
         self.deepsort_arg = get_config(self.track_cfg["config_deep_sort"])      # 读取deep_sort.yaml为EasyDict类
         self.predictors = predictors                # 检测器列表
         use_cuda = self.track_cfg["device"] != "cpu" and torch.cuda.is_available()
-        # if self.track_cfg["save_option"]["txt"] or self.track_cfg["save_option"]["img"]:    # 需要保存文本或图片时创建
-        self.save_dir = self.make_save_dir()
+        if self.track_cfg["save_option"]["txt"] or self.track_cfg["save_option"]["img"]:    # 需要保存文本或图片时创建
+            self.save_dir = self.make_save_dir()
         self.deepsort = build_tracker(self.deepsort_arg, use_cuda=use_cuda)     # 实例化deep_sort类
 
         print("INFO: Tracker init finished...")
@@ -73,8 +73,6 @@ class VideoTracker:
     def plot_track(self, img, deepsort_output, offset=(0, 0)):      # 在一帧上绘制检测结果（类别+置信度+追踪ID）
         for i, box in enumerate(deepsort_output):
             x1, y1, x2, y2, label, track_id, confidence = list(map(int, box))       # 将结果均映射为整型
-            if label == 3:
-                continue
             x1, y1, x2, y2 = x1 + offset[0], y1 + offset[1], x2 + offset[0], y2 + offset[1]     # 文本框偏移（二次检测中再优化）
 
             # 设置显示内容：文本框左上角为“标签名：置信度”，右上角为“跟踪id”，文本框颜色由类别决定
@@ -147,19 +145,14 @@ class VideoTracker:
             exit()
 
         # 获取视频的宽度、高度和帧率
-        if self.track_cfg["save_option"]["save"]:
-            if self.track_cfg["video_shape"][0] > 32 and self.track_cfg["video_shape"][1] > 32:
-                width = self.track_cfg["video_shape"][0]
-                height = self.track_cfg["video_shape"][1]
-            else:
-                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = int(cap.get(cv2.CAP_PROP_FPS))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
 
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 编码格式
-            current_time = datetime.now().strftime('%Y-%m-%d-%H-%M')
-            video_plot_save_path = os.path.join(self.save_dir, "video_plot_" + current_time + ".mp4")
-            out = cv2.VideoWriter(video_plot_save_path, fourcc, fps, (width, height))   # 初始化视频写入器
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 编码格式
+        current_time = datetime.now().strftime('%Y-%m-%d-%H-%M')
+        video_plot_save_path = os.path.join(self.save_dir, "video_plot_" + current_time + ".mp4")
+        out = cv2.VideoWriter(video_plot_save_path, fourcc, fps, (width, height))   # 初始化视频写入器
 
         yolo_time, sort_time, avg_fps = [], [], []
         t_start = time.time()
@@ -173,9 +166,6 @@ class VideoTracker:
 
             if not ret or cv2.waitKey(1) & 0xFF == ord('q'):    # 结束 或 按 'q' 键退出
                 break
-
-            if self.track_cfg["video_shape"][0] > 32 and self.track_cfg["video_shape"][1] > 32:
-                frame = resize_and_pad(frame, self.track_cfg["video_shape"])
 
             if idx_frame % self.track_cfg["vid_stride"] == 0:
                 deep_sort, det_res, cost_time = vt.image_track(frame)       # 追踪结果，检测结果，消耗时间
@@ -191,8 +181,7 @@ class VideoTracker:
             else:
                 plot_img = vt.plot_track(frame, last_deepsort)              # 帧间隔小，物体运动幅度小，就用上一次结果
 
-            if self.track_cfg["save_option"]["save"]:
-                out.write(plot_img)         # 将处理后的帧写入输出视频
+            out.write(plot_img)         # 将处理后的帧写入输出视频
 
             t1 = time.time()
             avg_fps.append(t1 - t0)     # 第1帧包含了模型加载时间要删除
@@ -206,8 +195,7 @@ class VideoTracker:
             idx_frame += 1
 
         cap.release()   # 释放读取资源
-        if self.track_cfg["save_option"]["save"]:
-            out.release()  # 释放写入资源
+        out.release()   # 释放写入资源
         cv2.destroyAllWindows()
 
         avg_yolo_t, avg_sort_t = sum(yolo_time[1:]) / (len(yolo_time) - 1), sum(sort_time[1:]) / (len(sort_time) - 1)
@@ -217,17 +205,17 @@ class VideoTracker:
 
 
 if __name__ == '__main__':
-    track_cfg = r'/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/bank_monitor/track.yaml'
+    track_cfg = r'E:\Py_Learning\yolo\ultralytics_YOLOv8\ultralytics\cfg\bank_monitor\track.yaml'
     overrides_1 = {"task": "detect",
                    "mode": "predict",
-                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/weights/yolov8s.pt',
+                   "model": r'E:\Py_Learning\yolo/ultralytics_YOLOv8/weights/yolov8m.pt',
                    "verbose": False,
                    "classes": [0]
                    }
 
     overrides_2 = {"task": "detect",
                    "mode": "predict",
-                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_05_25_m/weights/best.pt',
+                   "model": r'E:\Py_Learning\yolo\ultralytics_YOLOv8//weights/best.pt',
                    "verbose": False,
                    "classes": [0, 1, 2, 3]
                    }

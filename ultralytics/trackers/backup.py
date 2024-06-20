@@ -1,238 +1,275 @@
 """
 代码参考DeepSORT_YOLOv5_Pytorch
 """
-from ultralytics.utils.torch_utils import time_sync
+from ultralytics.utils.checks import check_imgsz
+from ultralytics.utils.ops import non_max_suppression, scale_coords, xyxy2xywh
+from ultralytics.utils.torch_utils import select_device, time_sync
 from ultralytics.utils import yaml_load
-from ultralytics.utils.plotting import colors as set_color
+from ultralytics.utils.plotting import Annotator
+from ultralytics.data.augment import LetterBox
 from ultralytics.trackers.deep_sort import build_tracker
 from ultralytics.task_bank.predict import BankDetectionPredictor
-from ultralytics.task_bank.utils import get_config, resize_and_pad
-from pathlib import Path
-from datetime import datetime
+from ultralytics.task_bank.utils import draw_boxes, letterbox
 
+import argparse
 import os
-import sys
 import time
-import cv2
 import numpy as np
+import warnings
+import cv2
 import torch
 import torch.backends.cudnn as cudnn
 
+import sys
 currentUrl = os.path.dirname(os.path.dirname(__file__))
 sys.path.append(os.path.abspath(os.path.join(currentUrl)))
+
 
 cudnn.benchmark = True
 
 
 class VideoTracker:
-    def __init__(self, track_cfg, predictors):
-        self.track_cfg = yaml_load(track_cfg)       # v8内置方法读取track.yaml文件为字典
-        self.deepsort_arg = get_config(self.track_cfg["config_deep_sort"])      # 读取deep_sort.yaml为EasyDict类
-        self.predictors = predictors                # 检测器列表
-        use_cuda = self.track_cfg["device"] != "cpu" and torch.cuda.is_available()
-        # if self.track_cfg["save_option"]["txt"] or self.track_cfg["save_option"]["img"]:    # 需要保存文本或图片时创建
-        self.save_dir = self.make_save_dir()
-        self.deepsort = build_tracker(self.deepsort_arg, use_cuda=use_cuda)     # 实例化deep_sort类
+    def __init__(self, cfg=None):
+        print('Initialize DeepSORT & YOLO-V8')
+        # ***************** Initialize ******************************************************
+        self.args = yaml_load(cfg)
+        self.img_size = args.img_size                   # image size in detector, default is 640
+        self.frame_interval = args.frame_interval       # frequency
+        self.device = select_device(args.device)
+        self.half = self.device.type != 'cpu'           # half precision only supported on CUDA
+        self.model = '/home/chenjun/code/ultralytics_YOLOv8/weights/yolov8m.pt'
 
-        print("INFO: Tracker init finished...")
+        # create video capture ****************
+        if args.display:
+            cv2.namedWindow("test", cv2.WINDOW_NORMAL)
+            cv2.resizeWindow("test", args.display_width, args.display_height)
 
-    def get_video(self, video_path=None):           # 获取视频流（优先级：摄像头 > 指定文件路径 > 配置文件路径）
-        if video_path is None:                      # 读取输入
-            if self.track_cfg["camera"] != -1:      # 使用摄像头获取视频
-                print("INFO: Using webcam " + str(self.track_cfg["camera"]))
-                v_cap = cv2.VideoCapture(self.track_cfg["camera"])
-            else:                                           # 使用文件路径获取
-                assert os.path.isfile(self.track_cfg["input_path"]), "Video path in *.yaml is error. "
-                v_cap = cv2.VideoCapture(self.track_cfg["input_path"])
+        if args.cam != -1:
+            print("Using webcam " + str(args.cam))
+            self.vdo = cv2.VideoCapture(args.cam)
         else:
-            assert os.path.isfile(video_path), "Video path in method get_video() is error. "
-            v_cap = cv2.VideoCapture(video_path)
+            self.vdo = cv2.VideoCapture()
 
-        return v_cap
+        # ***************************** initialize DeepSORT **********************************
+        cfg = yaml_load(args)
+        cfg.update(yaml_load(args.config_deepsort))
 
-    def image_track(self, img):     # 生成追踪目标的id
-        t1 = time_sync()
-        det_person = self.predictors[0](source=img)[0]     # 官方预训练权重，检测人的位置
-        det_things = self.predictors[1](source=img)[0]     # 自己训练的权重，检测物的位置
-        t2 = time_sync()
+        use_cuda = self.device.type != 'cpu' and torch.cuda.is_available()
+        self.deepsort = build_tracker(cfg, use_cuda=use_cuda)
 
-        bbox_xywh = torch.cat((det_person.boxes.xywh, det_things.boxes.xywh)).cpu()     # xywh目标框
-        bbox_xyxy = torch.cat((det_person.boxes.xyxy, det_things.boxes.xyxy)).cpu()     # xyxy目标框
-        confs = torch.cat((det_person.boxes.conf, det_things.boxes.conf)).cpu()         # 置信度
-        cls = torch.cat((det_person.boxes.cls + 4, det_things.boxes.cls)).cpu()         # 标签，多检测器需要调整类别标签
+        # ***************************** initialize YOLO-V5 **********************************
+        overrides = {"task": "detect",
+                     "mode": "predict",
+                     "model": self.model,
+                     "verbose": False,
+                     "classes": 0}
 
-        if len(cls) > 0:
-            deepsort_outputs = self.deepsort.update(bbox_xywh, confs, img, cls)   # x1,y1,x2,y2,label,track_ID,confs
-            # print(f"bbox_xywh: {bbox_xywh}, confs: {confs}, cls: {cls}, outputs: {outputs}")
+        self.detector = BankDetectionPredictor(cfg='/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/bank_monitor/detect_predict.yaml', overrides=overrides)
+
+        self.detector = torch.load(args.weights, map_location=self.device)['model'].float()  # load to FP32
+        self.detector.to(self.device).eval()
+        if self.half:
+            self.detector.half()  # to FP16
+
+        self.names = self.detector.module.names if hasattr(self.detector, 'module') else self.detector.names
+
+        print('Done..')
+        if self.device == 'cpu':
+            warnings.warn("Running in cpu mode which maybe very slow!", UserWarning)
+
+    def __enter__(self):
+        # ************************* Load video from camera *************************
+        if self.args.cam != -1:
+            print('Camera ...')
+            ret, frame = self.vdo.read()
+            assert ret, "Error: Camera error"
+            self.im_width = int(self.vdo.get(cv2.CAP_PROP_FRAME_WIDTH))
+            self.im_height = int(self.vdo.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        # ************************* Load video from file *************************
         else:
-            deepsort_outputs = np.zeros((0, 6), dtype=np.int32)               # 或者返回空
+            assert os.path.isfile(self.args.input_path), "Path error"
+            self.vdo.open(self.args.input_path)
+            self.im_width = int(self.vdo.get(cv2.CAP_PROP_FRAME_WIDTH))
+            self.im_height = int(self.vdo.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            assert self.vdo.isOpened()
+            print('Done. Load video file ', self.args.input_path)
 
-        t3 = time.time()
-        return deepsort_outputs, [bbox_xywh, bbox_xyxy, cls, confs], [t2 - t1, t3 - t2]
+        # ************************* create output *************************
+        if self.args.save_path:
+            os.makedirs(self.args.save_path, exist_ok=True)
+            # path of saved video and results
+            self.save_video_path = os.path.join(self.args.save_path, "results.mp4")
 
-    def plot_track(self, img, deepsort_output, offset=(0, 0)):      # 在一帧上绘制检测结果（类别+置信度+追踪ID）
-        for i, box in enumerate(deepsort_output):
-            x1, y1, x2, y2, label, track_id, confidence = list(map(int, box))       # 将结果均映射为整型
-            x1, y1, x2, y2 = x1 + offset[0], y1 + offset[1], x2 + offset[0], y2 + offset[1]     # 文本框偏移（二次检测中再优化）
+            # create video writer
+            fourcc = cv2.VideoWriter_fourcc(*self.args.fourcc)
+            self.writer = cv2.VideoWriter(self.save_video_path, fourcc,
+                                          self.vdo.get(cv2.CAP_PROP_FPS), (self.im_width, self.im_height))
+            print('Done. Create output file ', self.save_video_path)
 
-            # 设置显示内容：文本框左上角为“标签名：置信度”，右上角为“跟踪id”，文本框颜色由类别决定
-            color = set_color(label * 4)    # 设置颜色
-            cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)    # 基本矩形检测框
-            label_text = f'{self.track_cfg["class_name"][label]}:{round(confidence / 100, 2)}'  # 左上角标签+置信度文字
-            cv2.putText(img, label_text, (x1 - 60, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-            track_text = f"ID: {track_id}"  # 右上角追踪ID文字
-            cv2.putText(img, track_text, (x2, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+        if self.args.save_txt:
+            os.makedirs(self.args.save_txt, exist_ok=True)
 
-        return img
+        return self
 
-    def make_save_dir(self):    # 创建保存文件的文件夹
-        root_dir = Path(self.track_cfg["save_option"]["root"])      # 保存根路径
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.vdo.release()
+        self.writer.release()
+        if exc_type:
+            print(exc_type, exc_value, exc_traceback)
 
-        if not root_dir.exists():   # 根路径一定要自己指定
-            raise ValueError(f"设置存储根目录失败，不存在根路径：{root_dir}")
-
-        save_dir = os.path.join(root_dir, self.track_cfg["save_option"]["dir"])     # 实际保存路径
-
-        if os.path.exists(save_dir):    # 存在也保存到这里
-            print(f"INFO: 当前保存路径 [{save_dir}] 已经存在。")
-        else:
-            os.makedirs(save_dir)
-            print(f"INFO: 当前保存路径 [{save_dir}] 不存在，已创建。")
-
-        for sub_dir in ["image_plot", "txt_track", "txt_xyxy", "txt_xywh"]:     # 分目录保存不同结果
-            sub = os.path.join(save_dir, sub_dir)
-            if not os.path.exists(sub):
-                os.makedirs(sub)
-
-        return save_dir
-
-    def save_track(self, i=0, img=None, deepsort_output=None, det_res=None):    # 传入帧数，绘制结果，追踪结果，检测结果
-        if not self.track_cfg["save_option"]["save"]:
-            return
-
-        if img is not None and self.track_cfg["save_option"]["img"]:
-            img_save = os.path.join(self.save_dir, "image_plot", "img_" + str(i).zfill(5) + ".jpg")
-            cv2.imwrite(img_save, img)
-
-            if self.track_cfg["verbose"]:
-                print(f"INFO: 已经保存[{img_save}].")
-
-        if deepsort_output is not None and self.track_cfg["save_option"]["txt"]:
-            deepsort_save = os.path.join(self.save_dir, "txt_track", "deepsort_" + str(i).zfill(5) + ".txt")
-            np.savetxt(deepsort_save, deepsort_output, fmt='%d')
-
-            if self.track_cfg["verbose"]:
-                print(f"INFO: 已经保存[{deepsort_save}].")
-
-        if det_res is not None and self.track_cfg["save_option"]["txt"]:
-            xywh, xyxy, cls, confs = det_res    # torch.Size([n, 4]) torch.Size([n, 4]) torch.Size([n]) torch.Size([n])
-            xywh_save = os.path.join(self.save_dir, "txt_xywh", "xywh_" + str(i).zfill(5) + ".txt")
-            xyxy_save = os.path.join(self.save_dir, "txt_xyxy", "xyxy_" + str(i).zfill(5) + ".txt")
-            xywh_np = torch.cat([xywh, cls.view(-1, 1), confs.view(-1, 1)], dim=1).numpy()
-            xyxy_np = torch.cat([xyxy, cls.view(-1, 1), confs.view(-1, 1)], dim=1).numpy()
-            np.savetxt(xywh_save, xywh_np, fmt='%.6f')
-
-            if self.track_cfg["verbose"]:
-                print(f"INFO: 已经保存[{xywh_save}].")
-            np.savetxt(xyxy_save, xyxy_np, fmt='%.6f')
-            if self.track_cfg["verbose"]:
-                print(f"INFO: 已经保存[{xyxy_save}].")
-
-    def det_track_pipline(self, video_path=None):    # 读取视频，检测，追踪，绘制，保存全流程
-        cap = self.get_video(video_path=video_path)
-        if not cap.isOpened():
-            print("INFO: 无法获取视频，退出！")
-            exit()
-
-        # 获取视频的宽度、高度和帧率
-        if self.track_cfg["save_option"]["save"]:
-            if self.track_cfg["video_shape"][0] > 32 and self.track_cfg["video_shape"][1] > 32:
-                width = self.track_cfg["video_shape"][0]
-                height = self.track_cfg["video_shape"][1]
-            else:
-                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = int(cap.get(cv2.CAP_PROP_FPS))
-
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 编码格式
-            current_time = datetime.now().strftime('%Y-%m-%d-%H-%M')
-            video_plot_save_path = os.path.join(self.save_dir, "video_plot_" + current_time + ".mp4")
-            out = cv2.VideoWriter(video_plot_save_path, fourcc, fps, (width, height))   # 初始化视频写入器
-
+    def run(self):
         yolo_time, sort_time, avg_fps = [], [], []
         t_start = time.time()
 
         idx_frame = 0
-        last_deepsort = None    # 跳过的帧不绘制，会导致检测框闪烁
-
-        while True:
-            ret, frame = cap.read()
+        last_out = None
+        while self.vdo.grab():
+            # Inference *********************************************************************
             t0 = time.time()
+            _, img0 = self.vdo.retrieve()
 
-            if not ret or cv2.waitKey(1) & 0xFF == ord('q'):    # 结束 或 按 'q' 键退出
-                break
-
-            if self.track_cfg["video_shape"][0] > 32 and self.track_cfg["video_shape"][1] > 32:
-                frame = resize_and_pad(frame, self.track_cfg["video_shape"])
-
-            if idx_frame % self.track_cfg["vid_stride"] == 0:
-                deep_sort, det_res, cost_time = vt.image_track(frame)       # 追踪结果，检测结果，消耗时间
-                last_deepsort = deep_sort
-                yolo_time.append(cost_time[0])          # yolo推理时间
-                sort_time.append(cost_time[1])          # deepsort跟踪时间
-
-                if self.track_cfg["verbose"]:
-                    print('INFO: Frame %d Done. YOLO-time:(%.3fs) SORT-time:(%.3fs)' % (idx_frame, *cost_time))
-
-                plot_img = vt.plot_track(frame, deep_sort)                  # 绘制加入追踪框的图片
-                vt.save_track(idx_frame, plot_img, deep_sort, det_res)      # 保存跟踪结果
+            if idx_frame % self.args.frame_interval == 0:
+                outputs, yt, st = self.image_track(img0)        # (#ID, 5) x1,y1,x2,y2,id
+                last_out = outputs
+                yolo_time.append(yt)
+                sort_time.append(st)
+                print('Frame %d Done. YOLO-time:(%.3fs) SORT-time:(%.3fs)' % (idx_frame, yt, st))
             else:
-                plot_img = vt.plot_track(frame, last_deepsort)              # 帧间隔小，物体运动幅度小，就用上一次结果
-
-            if self.track_cfg["save_option"]["save"]:
-                out.write(plot_img)         # 将处理后的帧写入输出视频
-
+                outputs = last_out  # directly use prediction in last frames
             t1 = time.time()
-            avg_fps.append(t1 - t0)     # 第1帧包含了模型加载时间要删除
+            avg_fps.append(t1 - t0)
 
-            # add FPS information on output video
-            text_scale = max(1, plot_img.shape[1] // 1000)
-            cv2.putText(plot_img, 'frame: %d fps: %.2f ' % (idx_frame, (len(avg_fps) - 1) / (sum(avg_fps[1:]) + 1e-6)),
-                        (10, 20 + text_scale), cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 0, 255), thickness=1)
-            cv2.imshow('Frame', plot_img)
+            # post-processing ***************************************************************
+            # visualize bbox  ********************************
+            if len(outputs) > 0:
+                bbox_xyxy = outputs[:, :4]
+                identities = outputs[:, -1]
+                img0 = draw_boxes(img0, bbox_xyxy, identities)  # BGR
+
+                # add FPS information on output video
+                text_scale = max(1, img0.shape[1] // 1600)
+                cv2.putText(img0, 'frame: %d fps: %.2f ' % (idx_frame, len(avg_fps) / sum(avg_fps)),
+                        (20, 20 + text_scale), cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 0, 255), thickness=2)
+
+            # display on window ******************************
+            if self.args.display:
+                cv2.imshow("test", img0)
+                if cv2.waitKey(1) == ord('q'):  # q to quit
+                    cv2.destroyAllWindows()
+                    break
+
+            # save to video file *****************************
+            if self.args.save_path:
+                self.writer.write(img0)
+
+            if self.args.save_txt:
+                with open(self.args.save_txt + str(idx_frame).zfill(4) + '.txt', 'a') as f:
+                    for i in range(len(outputs)):
+                        x1, y1, x2, y2, idx = outputs[i]
+                        f.write('{}\t{}\t{}\t{}\t{}\n'.format(x1, y1, x2, y2, idx))
+
+
 
             idx_frame += 1
 
-        cap.release()   # 释放读取资源
-        if self.track_cfg["save_option"]["save"]:
-            out.release()  # 释放写入资源
-        cv2.destroyAllWindows()
+        print('Avg YOLO time (%.3fs), Sort time (%.3fs) per frame' % (sum(yolo_time) / len(yolo_time),
+                                                            sum(sort_time)/len(sort_time)))
+        t_end = time.time()
+        print('Total time (%.3fs), Total Frame: %d' % (t_end - t_start, idx_frame))
 
-        avg_yolo_t, avg_sort_t = sum(yolo_time[1:]) / (len(yolo_time) - 1), sum(sort_time[1:]) / (len(sort_time) - 1)
-        print(f'INFO: Avg YOLO time ({avg_yolo_t:.3f}s), Sort time ({avg_sort_t:.3f}s) per frame')
-        total_t, avg_fps = time.time() - t_start, (len(avg_fps) - 1) / (sum(avg_fps[1:]) + 1e-6)
-        print('INFO: Total Frame: %d, Total time (%.3fs), Avg fps (%.3f)' % (idx_frame, total_t, avg_fps))
+    def image_track(self, im0):
+        """
+        :param im0: original image, BGR format
+        :return:
+        """
+        # preprocess ************************************************************
+        # Padded resize
+        img = letterbox(im0, new_shape=self.img_size)[0]
+        # Convert
+        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+        img = np.ascontiguousarray(img)
+
+        # numpy to tensor
+        img = torch.from_numpy(img).to(self.device)
+        img = img.half() if self.half else img.float()  # uint8 to fp16/32
+        img /= 255.0  # 0 - 255 to 0.0 - 1.0
+        if img.ndimension() == 3:
+            img = img.unsqueeze(0)
+        sss = '%gx%g ' % img.shape[2:]    # print string
+
+        # Detection time *********************************************************
+        # Inference
+        t1 = time_sync()
+        with torch.no_grad():
+            pred = self.detector(img, augment=self.args.augment)[0]  # list: bz * [ (#obj, 6)]
+
+        # Apply NMS and filter object other than person (cls:0)
+        pred = non_max_suppression(pred, self.args.conf_thres, self.args.iou_thres,
+                                   classes=self.args.classes, agnostic=self.args.agnostic_nms)
+        print(f"pred: {pred}")
+        return
+        t2 = time_sync()
+
+        # get all obj ************************************************************
+        det = pred[0]  # for video, bz is 1
+        if det is not None and len(det):  # det: (#obj, 6)  x1 y1 x2 y2 conf cls
+
+            # Rescale boxes from img_size to original im0 size
+            det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+
+            # Print results. statistics of number of each obj
+            for c in det[:, -1].unique():
+                n = (det[:, -1] == c).sum()  # detections per class
+                sss += '%g %ss, ' % (n, self.names[int(c)])  # add to string
+
+            bbox_xywh = xyxy2xywh(det[:, :4]).cpu()
+            confs = det[:, 4:5].cpu()
+
+            # ****************************** deepsort ****************************
+            outputs = self.deepsort.update(bbox_xywh, confs, im0)
+            # (#ID, 5) x1,y1,x2,y2,track_ID
+        else:
+            outputs = torch.zeros((0, 5))
+
+        t3 = time.time()
+        return outputs, t2-t1, t3-t2
 
 
 if __name__ == '__main__':
-    track_cfg = r'/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/bank_monitor/track.yaml'
-    overrides_1 = {"task": "detect",
-                   "mode": "predict",
-                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/weights/yolov8s.pt',
-                   "verbose": False,
-                   "classes": [0]
-                   }
+    parser = argparse.ArgumentParser()
+    # input and output
+    parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
+    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--save_txt', default='output/predict/', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
 
-    overrides_2 = {"task": "detect",
-                   "mode": "predict",
-                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_05_25_m/weights/best.pt',
-                   "verbose": False,
-                   "classes": [0, 1, 2, 3]
-                   }
+    # camera only
+    parser.add_argument("--display", action="store_true")
+    parser.add_argument("--display_width", type=int, default=800)
+    parser.add_argument("--display_height", type=int, default=600)
+    parser.add_argument("--camera", action="store", dest="cam", type=int, default="-1")
 
-    predictor_1 = BankDetectionPredictor(overrides=overrides_1)
-    predictor_2 = BankDetectionPredictor(overrides=overrides_2)
-    predictors = [predictor_1, predictor_2]
+    # YOLO-V5 parameters
+    parser.add_argument('--weights', type=str, default='yolov5/weights/yolov5s.pt', help='model.pt path')
+    parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
+    parser.add_argument('--conf-thres', type=float, default=0.5, help='object confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
+    parser.add_argument('--classes', nargs='+', type=int, default=[0], help='filter by class')
+    parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
+    parser.add_argument('--augment', action='store_true', help='augmented inference')
 
-    vt = VideoTracker(track_cfg=track_cfg, predictors=predictors)
-    vt.det_track_pipline()
+    # deepsort parameters
+    parser.add_argument("--config_deepsort", type=str, default="./configs/deep_sort.yaml")
+
+    args = {
+        "input_path": '/home/chenjun/code/datasets/bank_monitor/银行柜台监控_1.mp4',
+        "save_path": './output/',
+        "--frame_interval": 1,
+
+    }
+    args.img_size = check_imgsz(args.img_size)
+    print(args)
+
+    cfg = '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/default.yaml'
+    with VideoTracker(args) as vdo_trk:
+        vdo_trk.run()

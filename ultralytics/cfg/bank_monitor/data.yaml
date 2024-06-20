@@ -6,10 +6,10 @@ test: test/images # test images (relative to 'path') 227 images
 negative_setting:
   neg_ratio: 1    # 小于等于0时，按原始官方配置训练，大于0时，控制正负样本。
   use_extra_neg: True
-  extra_neg_sources: {"/home/chenjun/code/datasets/COCO/train2014" : 50000,
-                      "/home/chenjun/code/datasets/VOC/VOCtrainval_11-May-2012/VOCdevkit/VOC2012/JPEGImages": 20000,
+  extra_neg_sources: {"/home/chenjun/code/datasets/COCO/train2014" : 20000,
+                      # "/home/chenjun/code/datasets/VOC/VOCtrainval_11-May-2012/VOCdevkit/VOC2012/JPEGImages": 1000,
                       }  # 数据集字符串或列表（图片路径或图片列表）
-  fix_dataset_length: 24000  # 是否自定义每轮参与训练的图片数量
+  fix_dataset_length: 12000  # 是否自定义每轮参与训练的图片数量
 
 
 # number of classes

@@ -76,8 +76,8 @@ class Tracker:
         # Update track set.
         for track_idx, detection_idx in matches:
             self.tracks[track_idx].update(self.kf, detections[detection_idx])
-            self.tracks[track_idx].label = detections[detection_idx].label  # 新增此行
-            self.tracks[track_idx].confs = detections[detection_idx].confs  # 新增此行
+            self.tracks[track_idx].label = detections[detection_idx].label      # 新增此行
+            self.tracks[track_idx].confs = detections[detection_idx].confs      # 新增此行
         for track_idx in unmatched_tracks:
             self.tracks[track_idx].mark_missed()
         for detection_idx in unmatched_detections:
@@ -126,9 +126,9 @@ class Tracker:
 
         # Split track set into confirmed and unconfirmed tracks. ********************************************
         confirmed_tracks = [
-            i for i, t in enumerate(self.tracks) if t.is_confirmed()]  # confirmed: directly apply Matching_Cascade
+            i for i, t in enumerate(self.tracks) if t.is_confirmed()]   # confirmed: directly apply Matching_Cascade
         unconfirmed_tracks = [
-            i for i, t in enumerate(self.tracks) if not t.is_confirmed()]  # unconfirmed: directly go to IOU match
+            i for i, t in enumerate(self.tracks) if not t.is_confirmed()]   # unconfirmed: directly go to IOU match
 
         # Associate confirmed tracks using appearance features.(Matching_Cascade) ***************************
         matches_a, unmatched_tracks_a, unmatched_detections = \
@@ -162,5 +162,5 @@ class Tracker:
 
         self.tracks.append(Track(
             mean, covariance, self._next_id, self.n_init, self.max_age,
-            detection.feature))  # for new obj, create a new Track object for it
+            detection.feature)) # for new obj, create a new Track object for it
         self._next_id += 1

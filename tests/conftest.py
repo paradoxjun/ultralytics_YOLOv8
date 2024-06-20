@@ -3,7 +3,7 @@
 import shutil
 from pathlib import Path
 
-from tests import TMP
+TMP = Path(__file__).resolve().parent / "tmp"  # temp directory for test files
 
 
 def pytest_addoption(parser):

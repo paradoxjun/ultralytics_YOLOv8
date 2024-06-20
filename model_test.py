@@ -1,14 +1,17 @@
 from ultralytics.task_bank.predict import BankDetectionPredictor
+from ultralytics.utils.ops import convert_torch2numpy_batch
 import cv2
 # from ultralytics.utils import yaml_load
-from utils_my.det_res_ops import image_show
+import numpy as np
+import torch
+from ultralytics.utils.det_res_ops import image_show
 from ultralytics.data.augment import LetterBox
-from ultralytics.utils.ops import xywh2xyxy
+from ultralytics.utils.ops import scale_image, scale_boxes, xywh2xyxy
 
 
-model = '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_05_21_m/weights/best.pt'
+model = '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_05_18_s/weights/last.pt'
 # yaml_path = '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/default.yaml'
-img_path = '/home/chenjun/code/datasets/bank_monitor/data_without_neg/val/images/87203377_1688924277.jpg'
+img_path = '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/assets/12083135_2668385748.jpg'
 
 # cfg = yaml_load(yaml_path)
 # print(cfg)

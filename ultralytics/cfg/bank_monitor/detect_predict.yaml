@@ -6,8 +6,8 @@ source: # (str, optional) source directory for images or videos
 
 
 batch: 16           # (int) number of images per batch (-1 for AutoBatch)
-conf: 0.20          # (float, optional) object confidence threshold for detection (default 0.25 predict, 0.001 val)
-iou: 0.5            # (float) intersection over union (IoU) threshold for NMS
+conf: 0.25          # (float, optional) object confidence threshold for detection (default 0.25 predict, 0.001 val)
+iou: 0.7            # (float) intersection over union (IoU) threshold for NMS
 data:               # (str, optional) path to data file, i.e. coco8.yaml
 vid_stride: 1       # (int) video frame-rate stride
 verbose: True       # (bool) whether to print verbose output，控制台是否打印信息

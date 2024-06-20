@@ -1,24 +1,24 @@
-input_path: '/home/chenjun/code/datasets/bank_monitor/银行柜台监控_1.mp4'
-#input_path: '/home/chenjun/code/datasets/bank_monitor/save_video/c1.mp4'
-save_root: '/home/chenjun/code/ultralytics_YOLOv8/runs/detect/track_2/'
+# input_path: '/home/chenjun/下载/bank2406-柜台垂直视角1/城东柜员3/城东柜员3全景_20240325083701-20240325084701_1.mp4'
+# input_path: '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/assets/银行柜台监控_1.mp4'
+input_path: '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/assets/mm3.mp4'
 save_option:
-  save: False  # 是否保存
-  root: '/home/chenjun/code/ultralytics_YOLOv8'   # 保存的根目录
-  dir: 'runs/detect/track_4'                        # 当前运行保存的子目录
-  txt: False     # 保存运行结果的 txt
-  img: False     # 保存运行结果生成的图片
+  save: True  # 是否保存
+  root: '/home/chenjun/code/ultralytics_YOLOv8'    # 保存的根目录
+  dir: 'runs/detect/track_demo'                        # 当前运行保存的子目录
+  txt: False   # 保存运行结果的 txt
+  img: False   # 保存运行结果生成的图片
 vid_stride: 1
 config_deep_sort: '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/trackers/deep_sort.yaml'
+config_byte_sort: '/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/trackers/bytetrack.yaml'
 fourcc: mp4v
 camera: -1
 device: 0
 verbose: False  # 控制台打印，控制循环内的持续输出，False不打印
-half: False                 # 暂未实现，控制推理精度
-video_shape: [800, 450]     # 暂未实现，resize视频
+half: False               # 暂未实现，控制推理精度
+video_shape: [800, 480]   # 暂未实现，resize视频
 class_name:
   0: ycj
   1: kx
   2: kx_dk
   3: money
   4: person
-
