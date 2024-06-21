@@ -100,7 +100,7 @@ class Money:
                 self.pos_state_keep_time = 0
 
         self.history.append((idx_frame, xyxy, conf))
-        max_confidence_index = max(range(len(self.history)), key=lambda i: self.history[i][2])     # 返回最大置信度检测结果
+        # max_confidence_index = max(range(len(self.history)), key=lambda i: self.history[i][2])     # 返回最大置信度检测结果
         max_confidence_index = -1
         self.xyxy = self.history[max_confidence_index][1]
         self.conf = self.history[max_confidence_index][2]
@@ -151,19 +151,19 @@ class MoneyTracker:
 
         have_update = [False] * output_money.shape[0]
 
-        print(f"beginning history: {self.id_history}")
+        # print(f"beginning history: {self.id_history}")
         self.check_in_ycj(idx_frame, output_money, output_ycj, have_update, ioa_in_ycj, ioa_same_money)
-        print(f"after check money: money_num: {len(self.money)}, now: {self.id_now}, history: {self.id_history}")
-        print(have_update)
+        # print(f"after check money: money_num: {len(self.money)}, now: {self.id_now}, history: {self.id_history}")
+        # print(have_update)
         self.check_in_kx(idx_frame, output_money, output_kx, have_update, ioa_in_kx)
-        print(f"after check box: money_num: {len(self.money)}, now: {self.id_now}, history: {self.id_history}")
-        print(have_update)
+        # print(f"after check box: money_num: {len(self.money)}, now: {self.id_now}, history: {self.id_history}")
+        # print(have_update)
         self.check_now_residual(idx_frame, output_money, have_update, ioa_same_money)
-        print(f"after check res: money_num: {len(self.money)}, now: {self.id_now}, history: {self.id_history}")
-        print(have_update)
+        # print(f"after check res: money_num: {len(self.money)}, now: {self.id_now}, history: {self.id_history}")
+        # print(have_update)
         self.check_history(idx_frame, output_person, ioa_same_money)
-        print(f"finally: money_num: {len(self.money)}, now: {self.id_now}, history: {self.id_history}")
-        print(have_update)
+        # print(f"finally: money_num: {len(self.money)}, now: {self.id_now}, history: {self.id_history}")
+        # print(have_update)
 
         if len(self.id_now) == 0:
             return np.empty((0, 10), dtype=np.float32)
@@ -262,11 +262,18 @@ class MoneyTracker:
 
                 if track_id in self.id_history:     # 该ID已经存在
                     check_state = self.money[track_id].get_check_state()
-                    pos_state = self.money[track_id].get_check_state()
+                    pos_state = self.money[track_id].get_pos_state()
 
                     # 先前的状态不是在款箱中，且不是已经验钞状态
-                    if pos_state != PositionState.InBox and check_state != MoneyState.Checked:
-                        self.money[track_id].set_operation_state(OperationState.ForgetCheck)
+                    if pos_state != PositionState.InBox:
+                        if check_state == MoneyState.Checked:
+                            self.money[track_id].set_operation_state(OperationState.ReturnBox)
+                            self.money[track_id].pos_state = PositionState.InBox
+                        else:
+                            self.money[track_id].set_operation_state(OperationState.ForgetCheck)
+                            self.money[track_id].pos_state = PositionState.InBox
+                    else:
+                        self.money[track_id].set_operation_state(OperationState.UnKnown)
 
                     self.money[track_id].update(idx_frame, xyxy, conf, check_state, PositionState.InBox)
                     self.id_now.add(track_id)

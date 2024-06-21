@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from collections import deque
-from ultralytics.task_bank.utils import ioa
+from ultralytics.task_bank.compute import ioa_bbox_bbox_xyxy
 
 
 def filter_person_boxes(xyxy, conf, height_ratio=3.0, width_ratio=3.0, area_ratio=5.0, confidence=0.35):
@@ -104,7 +104,7 @@ class MoneyCounterTracker:
                 # 不是，则建立一个新的验钞机对象，self.nums+1，real_id=self.nums，id_set里加入real_id
                 found = False
                 for real_id, counter in self.money_counters.items():
-                    if ioa(counter.xyxy, xyxy) > ioa_threshold:  # 假设IOA大于0.5认为是同一台验钞机
+                    if ioa_bbox_bbox_xyxy(counter.xyxy, xyxy)[0] > ioa_threshold:  # 假设IOA大于0.5认为是同一台验钞机
                         self.track_id_map[track_id] = real_id
                         counter.update(idx_frame, xyxy, label, conf)
                         found = True
@@ -139,7 +139,7 @@ class MoneyCounterTracker:
                 is_occluded = False
                 for ren in ren_result:
                     *ren_xyxy, _, _, _ = ren
-                    if ioa(ren_xyxy, counter.xyxy) > ioa_threshold:  # 假设IOA大于0.5认为被遮挡
+                    if ioa_bbox_bbox_xyxy(ren_xyxy, counter.xyxy)[0] > ioa_threshold:  # 假设IOA大于0.5认为被遮挡
                         is_occluded = True
                         break
                 if not is_occluded:
@@ -175,7 +175,8 @@ class BoxTracker:
             else:
                 found = False
                 for real_id, box in self.boxes.items():
-                    if ioa(box.xyxy, xyxy) > ioa_threshold or ioa(xyxy, box.xyxy) > ioa_threshold:  # 打开和关闭两种情况
+                    if (ioa_bbox_bbox_xyxy(box.xyxy, xyxy)[0] > ioa_threshold or
+                            ioa_bbox_bbox_xyxy(xyxy, box.xyxy)[1] > ioa_threshold):  # 打开和关闭两种情况
                         self.track_id_map[track_id] = real_id
                         box.update(idx_frame, xyxy, label, conf)
                         found = True

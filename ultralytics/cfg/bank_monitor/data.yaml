@@ -13,11 +13,12 @@ negative_setting:
 
 
 # number of classes
-nc: 4
+nc: 5
 
 # Classes
 names:
   0: ycj
   1: kx
   2: kx_dk
-  3: money
+  3: qian
+  4: zbm

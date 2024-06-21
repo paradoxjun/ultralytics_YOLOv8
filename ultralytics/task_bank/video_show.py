@@ -1,14 +1,9 @@
-"""
-代码参考DeepSORT_YOLOv5_Pytorch
-"""
 from ultralytics.utils.torch_utils import time_sync
 from ultralytics.utils import yaml_load
 from ultralytics.utils.plotting import colors as set_color
-from ultralytics.trackers.deep_sort import build_tracker
+from ultralytics.task_bank.byte_tracker_modify import BYTETracker
 from ultralytics.task_bank.predict import BankDetectionPredictor
-from ultralytics.task_bank.utils import (get_config, resize_and_pad, transform_and_concat_tensors, split_indices,
-                                         split_indices_deepsort, apply_indices)
-from ultralytics.task_bank.obj_class import filter_person_boxes, MoneyCounterTracker, BoxTracker
+from ultralytics.task_bank.utils import get_config, resize_and_pad, transform_and_concat_tensors
 from pathlib import Path
 from datetime import datetime
 
@@ -29,14 +24,10 @@ cudnn.benchmark = True
 class VideoTracker:
     def __init__(self, track_cfg, predictors):
         self.track_cfg = yaml_load(track_cfg)       # v8内置方法读取track.yaml文件为字典
-        self.deepsort_arg = get_config(self.track_cfg["config_deep_sort"])      # 读取deep_sort.yaml为EasyDict类
         self.predictors = predictors                # 检测器列表
+        self.bytesort_arg = get_config(self.track_cfg["config_byte_sort"])      # 读取xxxx_sort.yaml为EasyDict类
+        self.bytesort = BYTETracker(self.bytesort_arg)     # 实例化xxxx_sort类
         self.save_dir = self.make_save_dir()
-        use_cuda = self.track_cfg["device"] != "cpu" and torch.cuda.is_available()
-        self.deepsort = build_tracker(self.deepsort_arg, use_cuda=use_cuda)     # 实例化deep_sort类
-
-        self.money_counter_tracker = MoneyCounterTracker()
-        self.kx_tracker = BoxTracker()
 
         print("INFO: Tracker init finished...")
 
@@ -54,7 +45,7 @@ class VideoTracker:
             os.makedirs(save_dir)
             print(f"INFO: 当前保存路径 [{save_dir}] 不存在，已创建。")
 
-        for sub_dir in ["image_plot", "txt_track", "txt_xyxy", "txt_xywh"]:     # 分目录保存不同结果
+        for sub_dir in ["image_plot", "txt_track", "txt_xyxy", "txt_xywh", "txt_xywhn"]:     # 分目录保存不同结果
             sub = os.path.join(save_dir, sub_dir)
             if not os.path.exists(sub):
                 os.makedirs(sub)
@@ -77,77 +68,51 @@ class VideoTracker:
 
     def image_track(self, img, idx_frame=0):     # 生成追踪目标的id
         t1 = time_sync()
-        det_person = self.predictors[0](source=img)[0]     # 官方预训练权重，检测人的位置
-        det_things = self.predictors[1](source=img)[0]     # 自己训练的权重，检测物的位置
+
+        det_res_xyxy = []
+        det_res_xywh = []
+        det_res_conf = []
+        det_res_cls = []
+        det_res_names = []
+        for predictor in self.predictors:
+            det_res = predictor(source=img)[0]
+            det_res_xyxy.append(det_res.boxes.xyxy)
+            det_res_xywh.append(det_res.boxes.xywh)
+            det_res_conf.append(det_res.boxes.conf)
+            det_res_cls.append(det_res.boxes.cls)
+            det_res_names.append(det_res.names)
+
+        bbox_xywh = torch.cat(det_res_xywh).cpu().numpy()
+        bbox_xyxy = torch.cat(det_res_xyxy).cpu().numpy()
+        confs = torch.cat(det_res_conf).cpu().numpy()
+        cls = transform_and_concat_tensors(det_res_cls, det_res_names, self.track_cfg['class_name']).cpu().numpy()
+
         t2 = time_sync()
 
-        # print(det_person.boxes.xyxy, det_person.boxes.conf)
-        det_person_index = filter_person_boxes(det_person.boxes.xyxy, det_person.boxes.conf)
-
-        det_person_xywh = apply_indices(det_person.boxes.xywh, det_person_index)
-        det_person_xyxy = apply_indices(det_person.boxes.xyxy, det_person_index)
-        det_person_conf = apply_indices(det_person.boxes.conf, det_person_index)
-        det_person_cls = apply_indices(det_person.boxes.cls, det_person_index)
-        # print(det_person_index, det_person_xyxy)
-        # print('*' * 20)
-
-        bbox_xywh = torch.cat((det_person_xywh, det_things.boxes.xywh)).cpu()     # xywh目标框
-        bbox_xyxy = torch.cat((det_person_xyxy, det_things.boxes.xyxy)).cpu()     # xyxy目标框
-
-        confs = torch.cat([det_person_conf, det_things.boxes.conf]).cpu()  # 置信度
-        cls = transform_and_concat_tensors([det_person_cls, det_things.boxes.cls],
-                                           [det_person.names, det_things.names],
-                                           self.track_cfg['class_name']).cpu()          # 标签，多检测器需要调整类别标签
-
-        indices_d, indices_s = split_indices(cls)     # 需要用deepsort跟踪的下标索引，sort跟踪的下标索引
-        bbox_xywh_d, bbox_xywh_s = bbox_xywh[indices_d], bbox_xywh[indices_s]
-        bbox_xyxy_d, bbox_xyxy_s = bbox_xyxy[indices_d], bbox_xyxy[indices_s]
-        confs_d, confs_s = confs[indices_d], confs[indices_s]
-        cls_d, cls_s = cls[indices_d], cls[indices_s],
-
-        if len(cls_d) > 0:
-            deepsort_outputs = self.deepsort.update(bbox_xywh_d, confs_d, img, cls_d)   # x1,y1,x2,y2,label,track_ID,confs
-            # print(f"bbox_xywh: {bbox_xywh}, confs: {confs}, cls: {cls}, outputs: {outputs}")
-
-            if len(deepsort_outputs) > 0:
-                split_index = split_indices_deepsort(deepsort_outputs, (0, 1, 2, 3, 4))    # 钱没放入检测
-
-                res_det = [np.empty((0, 7)) for i in range(5)]
-
-                for i in range(5):
-                    if split_index[i] is not None:
-                        res_det[i] = deepsort_outputs[split_index[i]]
-
-                money_counter = self.money_counter_tracker.update(idx_frame, res_det[0], res_det[4])
-
-                kx_all = np.concatenate([res_det[1], res_det[2]], axis=0)
-                kx = self.kx_tracker.update(idx_frame, kx_all, res_det[4])
-                # print(kx[1])
-
-                deepsort_outputs = np.concatenate([money_counter, kx[0], res_det[4]], axis=0)
-
+        if len(cls) > 0:
+            bytesort_outputs = self.bytesort.update(bbox_xywh, confs, cls)   # x1,y1,x2,y2,track_id,confs,label,order
         else:
-            deepsort_outputs = np.zeros((0, 6), dtype=np.int32)               # 或者返回空
+            bytesort_outputs = np.zeros((0, 8), dtype=np.float32)               # 或者返回空
 
         t3 = time.time()
-        return deepsort_outputs, [bbox_xywh_d, bbox_xyxy_d, cls_d, confs_d], [t2 - t1, t3 - t2]
+        return bytesort_outputs, [bbox_xywh, bbox_xyxy, cls, confs], [t2 - t1, t3 - t2]
 
-    def plot_track(self, img, deepsort_output, offset=(0, 0)):      # 在一帧上绘制检测结果（类别+置信度+追踪ID）
-        for i, box in enumerate(deepsort_output):
-            x1, y1, x2, y2, label, track_id, confidence = list(map(int, box))       # 将结果均映射为整型
-            x1, y1, x2, y2 = x1 + offset[0], y1 + offset[1], x2 + offset[0], y2 + offset[1]     # 文本框偏移（二次检测中再优化）
+    def plot_track(self, img, sort_output):      # 在一帧上绘制检测结果（类别+置信度+追踪ID）
+        for i, box in enumerate(sort_output):
+            x1, y1, x2, y2, track_id, _, label, _ = list(map(int, box))       # 将结果均映射为整型
+            confidence = float(box[5])
 
             # 设置显示内容：文本框左上角为“标签名：置信度”，右上角为“跟踪id”，文本框颜色由类别决定
-            color = set_color(label * 4)    # 设置颜色
+            color = set_color(label * 2)    # 设置颜色
             cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)    # 基本矩形检测框
-            label_text = f'{self.track_cfg["class_name"][label]}:{round(confidence / 100, 2)}'  # 左上角标签+置信度文字
+            label_text = f'{self.track_cfg["class_name"][label]}:{round(confidence, 2)}'  # 左上角标签+置信度文字
             cv2.putText(img, label_text, (x1 - 60, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
             track_text = f"ID: {track_id}"  # 右上角追踪ID文字
             cv2.putText(img, track_text, (x2, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
         return img
 
-    def save_track(self, i=0, img=None, deepsort_output=None, det_res=None):    # 传入帧数，绘制结果，追踪结果，检测结果
+    def save_track(self, i=0, img=None, sort_output=None, det_res=None):    # 传入帧数，绘制结果，追踪结果，检测结果
         if not self.track_cfg["save_option"]["save"]:
             return
 
@@ -158,12 +123,12 @@ class VideoTracker:
             if self.track_cfg["verbose"]:
                 print(f"INFO: 已经保存[{img_save}].")
 
-        if deepsort_output is not None and self.track_cfg["save_option"]["txt"]:
-            deepsort_save = os.path.join(self.save_dir, "txt_track", "deepsort_" + str(i).zfill(5) + ".txt")
-            np.savetxt(deepsort_save, deepsort_output, fmt='%d')
+        if sort_output is not None and self.track_cfg["save_option"]["txt"]:
+            sort_save = os.path.join(self.save_dir, "txt_track", "sort_" + str(i).zfill(5) + ".txt")
+            np.savetxt(sort_save, sort_output, fmt='%d')
 
             if self.track_cfg["verbose"]:
-                print(f"INFO: 已经保存[{deepsort_save}].")
+                print(f"INFO: 已经保存[{sort_save}].")
 
         if det_res is not None and self.track_cfg["save_option"]["txt"]:
             xywh, xyxy, cls, confs = det_res    # torch.Size([n, 4]) torch.Size([n, 4]) torch.Size([n]) torch.Size([n])
@@ -204,7 +169,7 @@ class VideoTracker:
         t_start = time.time()
 
         idx_frame = 0
-        last_deepsort = None    # 跳过的帧不绘制，会导致检测框闪烁
+        last_sort = None    # 跳过的帧不绘制，会导致检测框闪烁
 
         while True:
             ret, frame = cap.read()
@@ -217,18 +182,18 @@ class VideoTracker:
                 frame = resize_and_pad(frame, self.track_cfg["video_shape"])
 
             if idx_frame % self.track_cfg["vid_stride"] == 0:
-                deep_sort, det_res, cost_time = vt.image_track(frame, idx_frame)       # 追踪结果，检测结果，消耗时间
-                last_deepsort = deep_sort
+                sort, det_res, cost_time = vt.image_track(frame, idx_frame)       # 追踪结果，检测结果，消耗时间
+                last_sort = sort
                 yolo_time.append(cost_time[0])          # yolo推理时间
-                sort_time.append(cost_time[1])          # deepsort跟踪时间
+                sort_time.append(cost_time[1])          # sort跟踪时间
 
                 if self.track_cfg["verbose"]:
                     print('INFO: Frame %d Done. YOLO-time:(%.3fs) SORT-time:(%.3fs)' % (idx_frame, *cost_time))
 
-                plot_img = vt.plot_track(frame, deep_sort)                  # 绘制加入追踪框的图片
-                vt.save_track(idx_frame, plot_img, deep_sort, det_res)      # 保存跟踪结果
+                plot_img = vt.plot_track(frame, sort)                  # 绘制加入追踪框的图片
+                vt.save_track(idx_frame, plot_img, sort, det_res)      # 保存跟踪结果
             else:
-                plot_img = vt.plot_track(frame, last_deepsort)              # 帧间隔小，物体运动幅度小，就用上一次结果
+                plot_img = vt.plot_track(frame, last_sort)              # 帧间隔小，物体运动幅度小，就用上一次结果
 
             if self.track_cfg["save_option"]["save"]:
                 out.write(plot_img)         # 将处理后的帧写入输出视频
@@ -259,21 +224,38 @@ if __name__ == '__main__':
     track_cfg = r'/home/chenjun/code/ultralytics_YOLOv8/ultralytics/cfg/bank_monitor/track.yaml'
     overrides_1 = {"task": "detect",
                    "mode": "predict",
-                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/weights/yolov8s.pt',
+                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/weights/yolov8m.pt',
                    "verbose": False,
-                   "classes": [0]
+                   "classes": [0],
+                   "iou": 0.4
                    }
 
     overrides_2 = {"task": "detect",
                    "mode": "predict",
-                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_05_25_m/weights/best.pt',
+                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_06_20_m_ycj_kx/weights/best.pt',
                    "verbose": False,
-                   "classes": [0, 1, 2, 3]
+                   "classes": [0, 1, 2]
+                   }
+
+    overrides_3 = {"task": "detect",
+                   "mode": "predict",
+                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_06_20_m_qian/weights/best.pt',
+                   "verbose": False,
+                   "classes": [3]
+                   }
+
+    overrides_4 = {"task": "detect",
+                   "mode": "predict",
+                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_06_20_m_zbm/weights/best.pt',
+                   "verbose": False,
+                   "classes": [4]
                    }
 
     predictor_1 = BankDetectionPredictor(overrides=overrides_1)
     predictor_2 = BankDetectionPredictor(overrides=overrides_2)
-    predictors = [predictor_1, predictor_2]
+    predictor_3 = BankDetectionPredictor(overrides=overrides_3)
+    predictor_4 = BankDetectionPredictor(overrides=overrides_4)
+    predictors = [predictor_1, predictor_2, predictor_3, predictor_4]
 
     vt = VideoTracker(track_cfg=track_cfg, predictors=predictors)
     vt.det_track_pipline()
