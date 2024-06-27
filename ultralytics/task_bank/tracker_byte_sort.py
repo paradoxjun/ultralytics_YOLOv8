@@ -293,7 +293,7 @@ if __name__ == '__main__':
 
     overrides_2 = {"task": "detect",
                    "mode": "predict",
-                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_06_14_m/weights/best.pt',
+                   "model": r'/home/chenjun/code/ultralytics_YOLOv8/runs/detect/train_bank_06_24_l/weights/best.pt',
                    "verbose": False,
                    "classes": [0, 1, 2, 3]
                    }

@@ -1,11 +1,13 @@
-# path: /home/chenjun/code/datasets/bank_monitor/data_without_neg # dataset root dir
-train: /home/chenjun/code/datasets/bank_monitor/data_for_train_and_val/train/images
-val: /home/chenjun/code/datasets/bank_monitor/data_for_train_and_val/val/images
-test: test/images # test images (relative to 'path') 227 images
+path: /home/chenjun/code/datasets/bank_monitor/data_for_train_and_val # dataset root dir
+train: train_list_v1_all.txt
+# train: /home/chenjun/code/datasets/bank_monitor/data_for_train_and_val/dataset_v5_zbm/train/images
+val: val_list_v1_all.txt
+# val: /home/chenjun/code/datasets/bank_monitor/data_for_train_and_val/dataset_v5_zbm/val/images
+# test: test/images # test images (relative to 'path') 227 images
 
 negative_setting:
   neg_ratio: 1    # 小于等于0时，按原始官方配置训练，大于0时，控制正负样本。
-  use_extra_neg: True
+  use_extra_neg: False
   extra_neg_sources: {"/home/chenjun/code/datasets/COCO/train2014" : 20000,
                       # "/home/chenjun/code/datasets/VOC/VOCtrainval_11-May-2012/VOCdevkit/VOC2012/JPEGImages": 1000,
                       }  # 数据集字符串或列表（图片路径或图片列表）

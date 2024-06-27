@@ -1,9 +1,8 @@
-import cv2
 import torch
 import onnxruntime as ort
 import numpy as np
 
-from ultralytics.onnx.paddle_img_preprocess import read_image, ResizeImage, NormalizeImage
+from ultralytics.task_bank.onnx.paddle_img_preprocess import read_image, ResizeImage, NormalizeImage
 import torchvision.transforms as transforms
 
 

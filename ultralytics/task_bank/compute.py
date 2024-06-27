@@ -73,8 +73,8 @@ def ioa_bbox_bbox_xyxy(bbox1, bbox2):
         - 第三个值是交并比（IoU）。
     """
     # 计算 bbox1 和 bbox2 的左上角和右下角坐标
-    bbox1_tl, bbox1_br = bbox1[:2], bbox1[2:]
-    bbox2_tl, bbox2_br = bbox2[:2], bbox2[2:]
+    bbox1_tl, bbox1_br = bbox1[:2], bbox1[2:4]
+    bbox2_tl, bbox2_br = bbox2[:2], bbox2[2:4]
 
     # 计算相交区域的左上角和右下角坐标
     tl = np.maximum(bbox1_tl, bbox2_tl)

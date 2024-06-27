@@ -1,8 +1,7 @@
 import torch
-from ultralytics.onnx.paddle_utils import load_onnx_model
-from ultralytics.onnx.paddle_utils import preprocess_image as preprocess
-from ultralytics.onnx.paddle_utils import spherical_normalize as postprocess
-import time
+from ultralytics.task_bank.onnx.paddle_utils import load_onnx_model
+from ultralytics.task_bank.onnx.paddle_utils import preprocess_image as preprocess
+from ultralytics.task_bank.onnx.paddle_utils import spherical_normalize as postprocess
 
 
 class PPLCNetv2Predictor:
